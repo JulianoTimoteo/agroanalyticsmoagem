@@ -1,0 +1,168 @@
+/* ============================================================
+   css/Moagem/InformativoOperacional.css
+   Estiliza os cards KPI do Informativo Operacional
+   (Acumulado Safra, Viagens, Taxa Análise, Potencial,
+    Rotação, Moagem, Disp. Colhedora, Transbordo, Caminhões)
+   ============================================================ */
+
+/* Grid principal — 2 colunas no mobile, até 5 no desktop */
+.info-grid-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+    padding: 4px 0;
+    overflow: visible;
+}
+
+/* Card base */
+.info-compact-card {
+    position: relative;
+    overflow: visible !important;
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-left: 4px solid var(--primary, #2196F3);
+    border-radius: 10px;
+    padding: 14px 12px;
+    cursor: help;
+    transition: border-color 0.25s ease, transform 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.info-compact-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* Ícone */
+.card-icon {
+    font-size: 1rem;
+    margin-bottom: 6px;
+    opacity: 0.85;
+}
+
+/* Valor principal */
+.card-value {
+    font-weight: 900;
+    line-height: 1.1;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+    text-align: center;
+}
+
+/* Rótulo */
+.card-label {
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: var(--text, #F0F0F0);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    white-space: normal;
+    line-height: 1.2;
+}
+
+/* Sub-rótulo (ex: "160 Pró | 91 Terc") */
+.card-sublabel {
+    font-size: 0.72rem;
+    color: var(--text-secondary, #D8D8D8);
+    margin-top: 2px;
+}
+
+/* Estados de cor */
+.info-compact-card.success-border { border-left-color: #40800c !important; }
+.info-compact-card.warning-border { border-left-color: #FFB800 !important; }
+.info-compact-card.danger-border  { border-left-color: #FF2E63 !important; }
+.info-compact-card.neutral-border { border-left-color: #2196F3 !important; }
+
+/* Tooltip */
+.kpi-tooltip {
+    visibility: hidden;
+    width: 220px;
+    background: rgba(10, 14, 23, 0.98);
+    color: #e0e0e0;
+    text-align: left;
+    border-radius: 6px;
+    padding: 8px 10px;
+    position: absolute;
+    z-index: 9999;
+    top: calc(100% + 8px);
+    bottom: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.2s, bottom 0.2s;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    font-size: 0.75rem;
+    pointer-events: none;
+    backdrop-filter: blur(4px);
+}
+
+.info-compact-card:hover .kpi-tooltip {
+    visibility: visible;
+    opacity: 1;
+    top: calc(100% + 8px);
+    bottom: auto;
+}
+
+.kpi-tooltip::after {
+    content: "";
+    position: absolute;
+    bottom: 100%;
+    top: auto;
+    left: 50%;
+    margin-left: -5px;
+    border: 5px solid transparent;
+    border-bottom-color: rgba(10, 14, 23, 0.98);
+}
+
+.kpi-tooltip-title {
+    font-weight: 700;
+    margin-bottom: 5px;
+    color: #fff;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 4px;
+    font-size: 0.8rem;
+}
+
+.kpi-tooltip-row { margin-bottom: 3px; }
+
+.kpi-status-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+
+/* ── Mobile ─────────────────────────────────── */
+@media (max-width: 768px) {
+    .info-grid-container {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 8px !important;
+        padding: 4px 0 !important;
+    }
+
+    /* Primeiro card (Acumulado Safra) ocupa as 2 colunas */
+    .info-compact-card:first-child {
+        grid-column: 1 / -1 !important;
+    }
+
+    .info-compact-card {
+        min-height: 78px;
+        padding: 10px 8px;
+    }
+
+    .card-value {
+        word-break: break-word !important;
+    }
+
+    .card-label {
+        font-size: 0.62rem !important;
+    }
+}

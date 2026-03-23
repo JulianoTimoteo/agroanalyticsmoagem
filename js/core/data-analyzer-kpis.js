@@ -1,0 +1,331 @@
+// data-analyzer-kpis.js - Cálculo de KPIs Básicos (VERSÃO FINAL - CORREÇÃO DE LEITURA TIPO PROPRIETÁRIO)
+
+if (typeof DataAnalyzerKPIs === 'undefined') {
+    class DataAnalyzerKPIs {
+
+        constructor(analyzer) {
+            this.analyzer = analyzer;
+        }
+
+        /**
+         * Auxiliar para converter string numérica BR (1.000,00) para Float JS (1000.00)
+         */
+        _parseBRNumber(val) {
+            if (typeof val === 'number') return isNaN(val) ? 0 : val;
+            if (!val) return 0;
+
+            let str = String(val).trim().replace(/\s/g, '');
+            if (!str) return 0;
+
+            const numDots   = (str.match(/\./g) || []).length;
+            const numCommas = (str.match(/,/g)  || []).length;
+
+            // Sem separadores
+            if (numDots === 0 && numCommas === 0) {
+                return parseFloat(str) || 0;
+            }
+
+            // Múltiplas vírgulas → formato US com milhar vírgula: "2,818,825.42"
+            if (numCommas > 1) {
+                str = str.replace(/,/g, '');
+                return parseFloat(str) || 0;
+            }
+
+            // Múltiplos pontos → formato BR com milhar ponto: "2.818.825,42"
+            if (numDots > 1) {
+                str = str.replace(/\./g, '').replace(',', '.');
+                return parseFloat(str) || 0;
+            }
+
+            // Um ponto e uma vírgula → determina qual é decimal
+            if (numDots === 1 && numCommas === 1) {
+                const lastDot   = str.lastIndexOf('.');
+                const lastComma = str.lastIndexOf(',');
+                if (lastComma > lastDot) {
+                    // BR: "1.234,56" → ponto é milhar, vírgula é decimal
+                    str = str.replace('.', '').replace(',', '.');
+                } else {
+                    // US: "1,234.56" → vírgula é milhar, ponto é decimal
+                    str = str.replace(',', '');
+                }
+                return parseFloat(str) || 0;
+            }
+
+            // Só vírgula → BR decimal: "1234,56"
+            if (numCommas === 1 && numDots === 0) {
+                str = str.replace(',', '.');
+                return parseFloat(str) || 0;
+            }
+
+            // Só ponto → US/BR decimal: "1234.56"
+            return parseFloat(str) || 0;
+        }
+
+        /**
+         * 🔥 CÁLCULO DO ACUMULADO SAFRA
+         * Procura inteligentemente a coluna de peso na planilha AcmSafra
+         */
+        calculateAcumuladoSafra(productionData, acmSafraData) {
+            let dataToUse = acmSafraData || [];
+            
+            if (!dataToUse || !Array.isArray(dataToUse) || dataToUse.length === 0) {
+                console.warn("[KPIs] AcmSafra vazio ou inválido.");
+                return 0;
+            }
+
+            const firstRow = dataToUse[0];
+            const possibleColumns = ['PESO LIQUIDO', 'PESO_LIQUIDO', 'PESO.LIQUIDO', 
+                                   'LIQUIDO', 'LÍQUIDO', 
+                                   'TONELADAS', 'TON', 'TONS', 
+                                   'PESO', 'VLR_PESO', 
+                                   'TOTAL', 'ACUMULADO', 'MOAGEM'];
+                                   
+            let weightCol = null;
+            const keys = Object.keys(firstRow);
+            
+            for (const col of possibleColumns) {
+                weightCol = keys.find(k => k.toUpperCase().includes(col));
+                if (weightCol) break;
+            }
+
+            if (!weightCol) {
+                console.warn('[KPIs] AcmSafra: coluna de peso não encontrada. Colunas:', keys.join(' | '));
+                return 0;
+            }
+
+            let totalAcumulado = 0;
+            let rowCount = 0;
+            dataToUse.forEach(row => {
+                if (this.analyzer.isAggregationRow(row)) return;
+                const val = this._parseBRNumber(row[weightCol]);
+                totalAcumulado += val;
+                rowCount++;
+            });
+
+            // Sanidade: se totalAcumulado < 1000 mas rowCount > 0,
+            // provavelmente os valores estão em milhares de toneladas — não converter,
+            // apenas logar o aviso
+            console.log(`[KPIs] AcmSafra: col="${weightCol}" | linhas=${rowCount} | total=${totalAcumulado.toLocaleString('pt-BR')}`);
+            
+            return totalAcumulado;
+        }
+
+        /**
+         * TAXA DE ANÁLISE GLOBAL: cargas analisadas / total cargas
+         * Uma viagem TREMINHÃO tem 3 cargas; RODOTREM tem 2.
+         * Taxa = cargas_SIM / total_cargas_únicas × 100
+         */
+        calculateAnalysisRateByTrip(data) {
+            if (!data || data.length === 0) return 0;
+
+            const totalSet    = new Set();
+            const analisadasSet = new Set();
+
+            data.forEach(row => {
+                if (this.analyzer.isAggregationRow(row)) return;
+                const cargaId = String(row.carga || row.ticket || '').trim();
+                if (!cargaId) return;
+
+                totalSet.add(cargaId);
+
+                const val = row.analisado;
+                const isAnalysed = val === true || val === 'SIM' || val === 'S' || val === 1 ||
+                                   val === '1' || val === '1,00' ||
+                                   (typeof val === 'string' && val.toUpperCase().includes('ANALISADO'));
+                if (isAnalysed) analisadasSet.add(cargaId);
+            });
+
+            const taxa = totalSet.size > 0
+                ? Math.min(100, (analisadasSet.size / totalSet.size) * 100)
+                : 0;
+            return parseFloat(taxa.toFixed(2));
+        }
+
+        /**
+         * TAXA DE ANÁLISE POR LIBERAÇÃO: agrupada por libera/liberacao
+         * Retorna { liberacaoId: { totalCargas, analisadas, taxa } }
+         */
+        calculateAnalysisRateByLiberacao(data) {
+            if (!data || data.length === 0) return {};
+
+            const libMap = new Map();
+
+            data.forEach(row => {
+                if (this.analyzer.isAggregationRow(row)) return;
+                const cargaId = String(row.carga || row.ticket || '').trim();
+                if (!cargaId) return;
+
+                const libId = String(row.liberacao || row.libera || row.Liberacao || row['Cod. Frente'] || '').trim();
+                if (!libId) return;
+
+                if (!libMap.has(libId)) libMap.set(libId, { total: new Set(), sim: new Set() });
+                const lib = libMap.get(libId);
+                lib.total.add(cargaId);
+
+                const val = row.analisado;
+                const isAnalysed = val === true || val === 'SIM' || val === 'S' || val === 1 ||
+                                   (typeof val === 'string' && val.toUpperCase().includes('ANALISADO'));
+                if (isAnalysed) lib.sim.add(cargaId);
+            });
+
+            const result = {};
+            libMap.forEach((v, k) => {
+                const total    = v.total.size;
+                const analis   = v.sim.size;
+                const taxa     = total > 0 ? Math.min(100, Math.round((analis / total) * 100)) : 0;
+                result[k] = { totalCargas: total, analisadas: analis, taxa };
+            });
+            return result;
+        }
+
+        // --- MÉTODOS DE APOIO ORIGINAIS ---
+
+        countUniqueTrips(data) {
+            const uniqueTrips = new Set();
+            const uniqueProprias = new Set();
+            const uniqueTerceiros = new Set();
+            // Frota Registrada: unique caminhões com prefixo 31 (próprio) ou 91 (terceiro)
+            // conforme coluna "Frota Motriz" da produção
+            const uniqueFrotaPropria   = new Set(); // prefixo 31
+            const uniqueFrotaTerceira  = new Set(); // prefixo 91
+            
+            data.forEach(row => {
+                if (this.analyzer.isAggregationRow(row)) return;
+                const vId = row.viagem || row.idViagem;
+                if (!vId) return;
+                
+                const idStr = String(vId).trim();
+                uniqueTrips.add(idStr);
+                
+                if (this.analyzer.isPropria(row)) uniqueProprias.add(idStr);
+                else uniqueTerceiros.add(idStr);
+
+                // Conta frotas motriz distintas (somente 31xxx e 91xxx)
+                const frota = String(row.frota || '').trim();
+                if (frota && frota !== '0') {
+                    if (frota.startsWith('31')) uniqueFrotaPropria.add(frota);
+                    else if (frota.startsWith('91')) uniqueFrotaTerceira.add(frota);
+                }
+            });
+
+            const frotaRegistrada = uniqueFrotaPropria.size + uniqueFrotaTerceira.size;
+            
+            return {
+                total: uniqueTrips.size,
+                proprias: uniqueProprias.size,
+                terceiros: uniqueTerceiros.size,
+                frotaMotrizDistinta: frotaRegistrada,
+                frotaRegistradaPropria: uniqueFrotaPropria.size,
+                frotaRegistradaTerceira: uniqueFrotaTerceira.size
+            };
+        }
+
+        calculateTotalWeightComplete(data) {
+            let total = 0;
+            data.forEach(row => {
+                if (this.analyzer.isAggregationRow(row)) return;
+                total += parseFloat(row.peso) || 0;
+            });
+            return total;
+        }
+
+        analyzeFleetDistributionComplete(data) {
+            let p = 0, t = 0;
+            data.forEach(row => {
+                if (this.analyzer.isAggregationRow(row)) return;
+                const peso = parseFloat(row.peso) || 0;
+                
+                if (this.analyzer.isPropria(row)) p += peso;
+                else t += peso;
+            });
+            return { propria: p, terceiros: t };
+        }
+        
+        getEquipmentDistribution(data) {
+             let propria = 0;
+             let terceiros = 0;
+             
+             data.forEach(row => {
+                 const peso = parseFloat(row.peso) || 0;
+                 if (peso <= 0) return;
+
+                 if (this.analyzer.isPropria(row)) propria += peso;
+                 else terceiros += peso;
+             });
+             
+             return { propria, terceiros };
+        }
+
+        /**
+         * Análise de Tipo de Proprietário (Própria vs Fornecedor)
+         * 🔥 CORREÇÃO AQUI: Usa 'tipoProprietarioFa' mapeado do IntelligentProcessor
+         * e adiciona fallback para Frota se o campo de texto estiver vazio.
+         */
+        analyzeOwnerType(data) {
+            let propriaTons = 0;
+            let fornecedorTons = 0;
+            
+            data.forEach(row => {
+                if (this.analyzer.isAggregationRow(row)) return;
+
+                const peso = parseFloat(row.peso) || 0;
+                
+                // 1. Tenta identificar pelo texto da coluna "Tipo Proprietario (F.A.)"
+                // O IntelligentProcessor mapeia essa coluna para 'tipoProprietarioFa'
+                const tipoProp = (row.tipoProprietarioFa || row.dscTipoPropriedade || '').toUpperCase().trim();
+                
+                // Verifica se existe texto válido na coluna
+                if (tipoProp.length > 0) {
+                    if (tipoProp.includes('FORNECEDOR') || tipoProp.includes('PARCERIA') || tipoProp.includes('TERCEIRO') || tipoProp.includes('FRETISTA')) {
+                        fornecedorTons += peso;
+                    } else {
+                        // Assume Própria para "ARRENDAMENTO", "PROPRIA", "AGRICOLA", etc.
+                        propriaTons += peso;
+                    }
+                } 
+                else {
+                    // 2. Fallback de Segurança: Se a coluna de texto estiver vazia,
+                    // usa a lógica de prefixo de frota (isTerceiro / isPropria) definida no DataAnalyzer
+                    if (this.analyzer.isTerceiro(row)) {
+                        fornecedorTons += peso;
+                    } else {
+                        propriaTons += peso;
+                    }
+                }
+            });
+
+            const total = propriaTons + fornecedorTons;
+            
+            return {
+                propria: propriaTons,
+                fornecedor: fornecedorTons,
+                total: total,
+                propriaPercent: total > 0 ? (propriaTons / total) * 100 : 0,
+                fornecedorPercent: total > 0 ? (fornecedorTons / total) * 100 : 0,
+            };
+        }
+
+        calculateLastTripAverage(data) {
+            const tripWeights = [];
+            const uniqueTrips = new Set();
+            
+            for (let i = data.length - 1; i >= 0 && tripWeights.length < 3; i--) {
+                const row = data[i];
+                const v = row.viagem || row.idViagem;
+                const peso = parseFloat(row.peso) || 0;
+                
+                if (peso > 0 && v && !this.analyzer.isAggregationRow(row)) {
+                    if (!uniqueTrips.has(v)) { 
+                        tripWeights.push(peso); 
+                        uniqueTrips.add(v); 
+                    }
+                }
+            }
+            
+            const sum = tripWeights.reduce((a, b) => a + b, 0);
+            return { average: tripWeights.length > 0 ? sum / tripWeights.length : 0, count: tripWeights.length };
+        }
+    }
+    
+    window.DataAnalyzerKPIs = DataAnalyzerKPIs;
+}

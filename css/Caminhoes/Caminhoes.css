@@ -1,0 +1,78 @@
+/* ============================================================
+   css/Caminhoes/Caminhoes.css
+   Estiliza RankingCaminhoes e GraficoRotaCaminhoes
+   ============================================================ */
+
+.caminhoes-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.ranking-section {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 16px;
+}
+
+.ranking-section h4 {
+    font-size: 0.82rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text, #F0F0F0);
+    margin: 0 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.top-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 10px;
+    border-radius: 8px;
+    border-left: 4px solid rgba(255,255,255,0.1);
+    margin-bottom: 6px;
+    background: rgba(255,255,255,0.02);
+    transition: background 0.15s;
+    list-style: none;
+}
+
+.top-list-item:hover { background: rgba(255,255,255,0.05); }
+
+/* Doughnut container */
+.caminhoes-doughnut-wrapper {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 16px;
+    height: 260px;
+    position: relative;
+}
+
+/* Cards de métricas rápidas */
+.caminhoes-metrics-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.caminhao-metric-card {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 14px 12px;
+    text-align: center;
+}
+
+.caminhao-metric-card .metric-val  { font-size: 1.4rem; font-weight: 800; color: #2196F3; }
+.caminhao-metric-card .metric-lbl  { font-size: 0.7rem; color: var(--text, #F0F0F0); font-weight: 600; text-transform: uppercase; }
+
+@media (max-width: 768px) {
+    .caminhoes-grid { grid-template-columns: 1fr; }
+    .caminhoes-doughnut-wrapper { height: 220px; }
+}

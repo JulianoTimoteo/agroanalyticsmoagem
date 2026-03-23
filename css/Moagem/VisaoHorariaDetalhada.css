@@ -1,0 +1,137 @@
+/* ============================================================
+   css/Moagem/VisaoHorariaDetalhada.css
+   Estiliza o bloco de Visão Horária Detalhada:
+   gráficos de moagem real, potencial e rotação por hora
+   ============================================================ */
+
+.visao-horaria-section {
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 12px;
+    padding: 20px;
+}
+
+.visao-horaria-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.visao-horaria-title {
+    font-size: 0.82rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text, #F0F0F0);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Filtros de frente (própria/terceiros) */
+.visao-horaria-filters {
+    display: flex;
+    gap: 6px;
+}
+
+.vh-filter-btn {
+    padding: 5px 14px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text, #F0F0F0);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.vh-filter-btn:hover {
+    border-color: rgba(33, 150, 243, 0.4);
+    color: #e0e0e0;
+}
+
+.vh-filter-btn.active {
+    background: rgba(33, 150, 243, 0.2);
+    border-color: #2196F3;
+    color: #2196F3;
+}
+
+/* Área dos gráficos */
+.visao-horaria-charts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.vh-chart-wrapper {
+    position: relative;
+    height: 260px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 8px;
+    padding: 4px;
+}
+
+/* Gráfico de moagem real (ocupa largura total) */
+.vh-chart-wrapper.full-width {
+    grid-column: 1 / -1;
+    height: 200px;
+}
+
+/* Legenda inline */
+.vh-legend {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+.vh-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.73rem;
+    color: var(--text, #F0F0F0);
+    font-weight: 600;
+}
+
+.vh-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+/* Linha de meta no gráfico (aplicada via Chart.js) */
+.vh-meta-line-label {
+    font-size: 0.65rem;
+    color: #FFB800;
+    text-align: right;
+    margin-top: 3px;
+}
+
+/* ── Mobile ─────────────────────────────────── */
+@media (max-width: 900px) {
+    .visao-horaria-charts {
+        grid-template-columns: 1fr;
+    }
+
+    .vh-chart-wrapper {
+        height: 220px;
+    }
+
+    .vh-chart-wrapper.full-width {
+        height: 180px;
+    }
+}
+
+@media (max-width: 480px) {
+    .visao-horaria-section { padding: 14px 12px; }
+    .vh-chart-wrapper { height: 180px; }
+}

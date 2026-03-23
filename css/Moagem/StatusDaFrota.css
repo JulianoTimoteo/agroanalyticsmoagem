@@ -1,0 +1,50 @@
+/* ============================================================
+   css/Moagem/StatusDaFrota.css
+   Estiliza exclusivamente os cards de Status da Frota
+   ============================================================ */
+.fleet-status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 12px;
+    padding: 4px 0;
+}
+
+.fleet-card {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-left: 4px solid var(--primary, #2196F3);
+    border-radius: 10px;
+    padding: 14px 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 4px;
+    transition: transform 0.2s;
+}
+
+.fleet-card:hover { transform: translateY(-2px); }
+
+.fleet-card .card-number {
+    font-size: 1.85rem;
+    font-weight: 900;
+    line-height: 1;
+    color: var(--text, #ffffff);
+}
+
+.fleet-card .card-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--text, #F0F0F0);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+@media (max-width: 768px) {
+    .fleet-status-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+    }
+    .fleet-card .card-number { font-size: 1.35rem; }
+    .fleet-card { padding: 10px 8px; }
+}

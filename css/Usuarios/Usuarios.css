@@ -1,0 +1,74 @@
+/* ============================================================
+   css/Usuarios/Usuarios.css
+   Estiliza FormUsuario e ListaUsuarios
+   ============================================================ */
+
+.usuarios-container {
+    display: grid;
+    grid-template-columns: 400px 1fr;
+    gap: 20px;
+    align-items: start;
+}
+
+.form-usuario {
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 24px;
+}
+
+.form-usuario h3 {
+    margin: 0 0 20px;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.form-group { margin-bottom: 16px; }
+
+.form-group label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--text, #F0F0F0);
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    box-sizing: border-box;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: #fff;
+    font-size: 0.88rem;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group select:focus { border-color: #2196F3; }
+
+/* Tabela */
+#listaUsuariosContainer table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+
+#listaUsuariosContainer th {
+    padding: 10px 12px;
+    color: var(--text, #F0F0F0);
+    font-weight: 700;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+#listaUsuariosContainer td {
+    padding: 10px 12px;
+    color: #e0e0e0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+@media (max-width: 900px) {
+    .usuarios-container { grid-template-columns: 1fr; }
+}

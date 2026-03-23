@@ -1,0 +1,1616 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<!-- CRITICAL: prevent mobile backdrop flash before CSS loads -->
+<style>#menu-backdrop{display:none!important;pointer-events:none!important;opacity:0!important;visibility:hidden!important;backdrop-filter:none!important}</style>
+    <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>🌱 AgroAnalytics - Dashboard Operacional</title>
+
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#050A14"> 
+    <meta name="theme-color" content="#0A0E17">
+    <meta name="apple-mobile-web-app-title" content="AgroAnalytics">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="icon" type="image/x-icon" href="https://usinapitangueiras.com.br/wp-content/uploads/2020/10/cropped-favicon-180x180.png">
+    <link rel="apple-touch-icon" href="https://usinapitangueiras.com.br/wp-content/uploads/2020/10/cropped-favicon-180x180.png">
+
+    <link rel="stylesheet" href="css/base/main.css"> 
+    <link rel="stylesheet" href="css/base/mobile.css"> 
+    <link rel="stylesheet" href="css/OEE/oee.css">
+    <link rel="stylesheet" href="css/Moagem/Moagem.css">
+    <link rel="stylesheet" href="css/Moagem/StatusDaFrota.css">
+    <link rel="stylesheet" href="css/Moagem/AcumuladoEProgresso.css">
+    <link rel="stylesheet" href="css/Moagem/InformativoOperacional.css">
+    <link rel="stylesheet" href="css/Moagem/ProjecaoDeMoagem.css">
+    <link rel="stylesheet" href="css/Moagem/VisaoHorariaDetalhada.css">
+    <link rel="stylesheet" href="css/EntregaHXH/EntregaHXH.css">
+    <link rel="stylesheet" href="css/Caminhoes/Caminhoes.css">
+    <link rel="stylesheet" href="css/Colhedoras/Colhedoras.css">
+    <link rel="stylesheet" href="css/Usuarios/Usuarios.css">
+    <link rel="stylesheet" href="css/Consumo/Consumo.css">
+    <link rel="stylesheet" href="css/FrenteDeTrabalho/FrenteDeTrabalho.css">
+    <link rel="stylesheet" href="css/Metas/Metas.css">
+    <link rel="stylesheet" href="css/VisaoGlobal/VisaoGlobal.css">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.3.0/build/global/luxon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyADUuqh_THzGInTSytxzUFEwHV5LmwdvYc",
+            authDomain: "agroanalytics-api.firebaseapp.com",
+            projectId: "agroanalytics-api",
+            storageBucket: "agroanalytics-api.firebasestorage.app",
+            messagingSenderId: "739888244342",
+            appId: "1:739888244342:web:558d620583469ec515e157",
+            measurementId: "G-6TYZDXMJZ5"
+        };
+
+        // Inicializa Firebase apenas se ainda não estiver inicializado
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+    </script>
+
+    <script>
+        // CORREÇÃO: Evita erro "undefined" ao clicar antes do carregamento total
+        function safeShowTab(tabId) {
+            if (window.agriculturalDashboard && typeof window.agriculturalDashboard.showTab === 'function') {
+                window.agriculturalDashboard.showTab(tabId);
+            } else {
+                console.warn("AgroAnalytics: Aguardando carregamento do painel...");
+            }
+        }
+    </script>
+
+    <style>
+        /* ESTILO CORRIGIDO PARA MOBILE GRID */
+        @media (max-width: 768px) {
+            .info-grid-container {
+                display: grid !important;
+                grid-template-columns: repeat(2, 1fr) !important;
+                grid-auto-rows: minmax(80px, auto) !important;
+                gap: 10px !important;
+                width: 100% !important;
+            }
+            
+            .info-compact-card {
+                min-height: 80px !important;
+                padding: 10px !important;
+            }
+            
+            /* Acumulado Safra ocupa 2 colunas */
+            .info-compact-card:first-child {
+                grid-column: 1 / -1 !important;
+            }
+            
+            /* Remove regras conflitantes */
+            .info-compact-card:nth-child(n) {
+                grid-row: auto !important;
+            }
+        }
+        
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            margin-bottom: 15px;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        .checkbox-container input {
+            width: auto !important;
+            margin-right: 8px !important;
+            margin-bottom: 0 !important;
+        }
+
+        .radio-switch {
+            display: flex;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 3px;
+            margin-left: auto;
+            margin-right: 15px;
+            border: 1px solid var(--glass-border);
+            align-items: center;
+        }
+
+        .radio-switch input[type="radio"] {
+            display: none;
+        }
+
+        .radio-switch label {
+            padding: 4px 12px;
+            cursor: pointer;
+            border-radius: 15px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            transition: all 0.3s ease;
+            font-weight: 500;
+            user-select: none;
+            margin: 0 !important;
+        }
+
+        .radio-switch label:hover {
+            color: var(--text);
+            background: rgba(255,255,255,0.1);
+        }
+
+        .radio-switch input[type="radio"]:checked + label {
+            background: var(--primary);
+            color: #fff;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        .fleet-status-grid .status-item {
+            min-height: 52px !important;
+            padding: 0.4rem 0.3rem !important;
+        }
+        .fleet-status-grid .status-item .value {
+            font-size: 1rem !important;
+        }
+        .fleet-status-grid .status-item .label {
+            font-size: 0.58rem !important;
+        }
+        .averages-container, .disp-container {
+            display: flex;
+            gap: 1rem;
+            width: 100%;
+        }
+        
+        /* Grid padrão para Desktop */
+        .info-grid-container {
+            display: grid;
+            grid-template-columns: repeat(9, 1fr);
+            gap: 0.6rem;
+            width: 100%;
+            padding: 0.5rem 0;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .info-compact-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            padding: 0.6rem 0.4rem !important;
+            text-align: center;
+            transition: all 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            border-left: 4px solid var(--primary);
+            min-height: 60px;
+            min-width: 0;
+        }
+
+        .info-compact-card:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-2px);
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .info-compact-card.highlight {
+            background: rgba(0, 212, 255, 0.1) !important;
+            border-color: var(--success) !important;
+            min-height: 70px;
+        }
+
+        .info-compact-card:first-child {
+            background: rgba(0, 212, 255, 0.15) !important;
+            border-color: var(--success) !important;
+        }
+
+        .info-compact-card .card-icon {
+            font-size: 1rem;
+            margin-bottom: 5px;
+            color: var(--primary);
+        }
+
+        .info-compact-card .card-value {
+            font-size: 0.9rem !important;
+            font-weight: 700;
+            color: var(--primary);
+            line-height: 1.1;
+            margin-bottom: 3px;
+            display: block;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 100%;
+        }
+
+        .info-compact-card .card-label {
+            font-size: 0.55rem !important;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.2px;
+            line-height: 1.1;
+            display: block;
+            margin-bottom: 2px;
+            white-space: normal;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 100%;
+            max-height: 2.2em;
+        }
+
+        .info-compact-card .card-subinfo {
+            font-size: 0.5rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+            display: none;
+        }
+
+        .info-compact-card.success-border { border-left-color: var(--success) !important; }
+        .info-compact-card.warning-border { border-left-color: var(--warning) !important; }
+        .info-compact-card.danger-border { border-left-color: var(--danger) !important; }
+        .info-compact-card.primary-border { border-left-color: var(--primary) !important; }
+
+        .info-compact-card.highlight .card-subinfo {
+            display: block;
+        }
+
+        .info-compact-card.viagens-info {
+            position: relative;
+        }
+
+        .viagens-stats {
+            display: flex;
+            justify-content: center;
+            gap: 4px;
+            margin-top: 2px;
+            font-size: 0.5rem;
+            width: 100%;
+        }
+
+        .viagens-stats span {
+            padding: 0 3px;
+            border-radius: 2px;
+            font-weight: 600;
+        }
+
+        .viagens-pro { color: var(--success); }
+        .viagens-terc { color: var(--warning); }
+
+        @media (max-width: 1400px) {
+            .info-grid-container {
+                grid-template-columns: repeat(6, 1fr);
+                grid-template-rows: repeat(2, auto);
+                gap: 0.5rem;
+            }
+            .info-compact-card:nth-child(-n+3) { grid-row: 1; }
+            .info-compact-card:nth-child(n+4) { grid-row: 2; }
+        }
+
+        @media (max-width: 1024px) {
+            .info-grid-container {
+                grid-template-columns: repeat(3, 1fr);
+                grid-template-rows: repeat(3, auto);
+                gap: 0.5rem;
+            }
+            .info-compact-card { min-height: 55px; padding: 0.5rem 0.3rem !important; }
+        }
+
+        @media (max-width: 480px) {
+            .info-compact-card { min-height: 45px; }
+        }
+        
+        #tab-moagem .analytics-card:first-child,
+        #tab-moagem .analytics-card:first-child .glass-card,
+        .info-kpi-wrapper .glass-card,
+        .info-kpi-wrapper .glass-card.stat-card-mini,
+        .info-mini-cards-grid .status-item:first-child {
+            border-left: 1px solid var(--glass-border) !important;
+            background: rgba(255, 255, 255, 0.03) !important;
+        }
+
+
+        /* ══ LINHA DO TEMPO HxH — SCRUBBER HORIZONTAL ══════════════════════ */
+        .hxh-root { display:flex; flex-direction:column; gap:16px; }
+
+        /* KPI Bar */
+        .hxh-kpi-bar {
+            display:flex; flex-wrap:wrap; gap:12px 24px;
+            padding:12px 16px;
+            background:rgba(255,255,255,0.03);
+            border:1px solid rgba(255,255,255,0.07);
+            border-radius:10px;
+        }
+        [data-theme="light"] .hxh-kpi-bar { background:#f8fafc; border-color:#e2e8f0; }
+        .hxh-kpi-item { display:flex; flex-direction:column; gap:2px; min-width:100px; }
+        .hxh-kpi-label { font-size:.6rem; font-weight:700; text-transform:uppercase;
+            letter-spacing:.6px; color:var(--text-secondary); }
+        .hxh-kpi-val { font-size:.88rem; font-weight:800; color:var(--text); }
+
+        /* Scrubber wrapper */
+        .hxh-scrubber-wrap {
+            background:rgba(255,255,255,0.03);
+            border:1px solid rgba(255,255,255,0.07);
+            border-radius:12px;
+            padding:16px;
+        }
+        [data-theme="light"] .hxh-scrubber-wrap { background:#fff; border-color:#e2e8f0; }
+
+        .hxh-section-title {
+            font-size:.8rem; font-weight:800; text-transform:uppercase; letter-spacing:.7px;
+            color:var(--text-secondary); margin-bottom:14px; display:flex;
+            align-items:center; gap:0; justify-content:space-between;
+        }
+        .hxh-drag-hint {
+            font-size:.65rem; font-weight:600; color:var(--primary);
+            opacity:.7; text-transform:none; letter-spacing:0;
+        }
+
+        /* Track externo que contém tudo */
+        .hxh-track-outer {
+            position:relative; height:72px; margin:0 8px 28px;
+            user-select:none;
+        }
+
+        /* Segmentos das barras */
+        .hxh-segments {
+            position:absolute; top:0; left:0; right:0; bottom:20px;
+            display:flex; align-items:flex-end; border-radius:6px;
+            overflow:hidden; background:rgba(255,255,255,0.03);
+        }
+        .hxh-seg {
+            position:absolute; bottom:0; height:100%; cursor:pointer;
+            transition:opacity .15s, filter .15s; box-sizing:border-box;
+        }
+        .hxh-seg:hover { filter:brightness(1.3); }
+        .hxh-seg-active { filter:brightness(1.5) !important; outline:1px solid rgba(255,255,255,0.3); z-index:2; }
+        .hxh-seg-fill {
+            position:absolute; bottom:0; left:0; right:0;
+            transition:height .3s ease; border-radius:2px 2px 0 0;
+        }
+
+        /* Linha base */
+        .hxh-baseline {
+            position:absolute; bottom:20px; left:0; right:0;
+            height:1px; background:rgba(255,255,255,0.12);
+        }
+        [data-theme="light"] .hxh-baseline { background:#cbd5e1; }
+
+        /* Ticks */
+        .hxh-ticks { position:absolute; bottom:0; left:0; right:0; height:20px; }
+        .hxh-tick {
+            position:absolute; transform:translateX(-50%);
+            display:flex; flex-direction:column; align-items:center; gap:2px;
+        }
+        .hxh-tick::before {
+            content:''; width:1px; height:6px; background:rgba(255,255,255,0.2);
+        }
+        [data-theme="light"] .hxh-tick::before { background:#94a3b8; }
+        .hxh-tick-label {
+            font-size:.55rem; font-weight:700; color:var(--text-secondary);
+            white-space:nowrap; letter-spacing:.3px;
+        }
+
+        /* Range input (bolinha arrastável) */
+        .hxh-range {
+            position:absolute; bottom:14px; left:0; right:0; width:100%;
+            -webkit-appearance:none; appearance:none;
+            background:transparent; outline:none; cursor:pointer; z-index:10;
+            margin:0; padding:0; height:24px;
+        }
+        .hxh-range::-webkit-slider-runnable-track {
+            height:3px; border-radius:2px;
+            background:linear-gradient(to right, var(--primary) 0%, rgba(255,255,255,0.15) 0%);
+        }
+        .hxh-range::-moz-range-track {
+            height:3px; border-radius:2px; background:rgba(255,255,255,0.15);
+        }
+        .hxh-range::-webkit-slider-thumb {
+            -webkit-appearance:none; width:22px; height:22px;
+            border-radius:50%; background:var(--primary);
+            border:3px solid #0f172a; box-shadow:0 0 0 2px var(--primary);
+            margin-top:-10px; cursor:grab; transition:transform .15s, box-shadow .15s;
+        }
+        .hxh-range::-webkit-slider-thumb:active { cursor:grabbing; transform:scale(1.25);
+            box-shadow:0 0 0 4px rgba(56,189,248,0.3); }
+        .hxh-range::-moz-range-thumb {
+            width:20px; height:20px; border-radius:50%; background:var(--primary);
+            border:3px solid #0f172a; box-shadow:0 0 0 2px var(--primary); cursor:grab;
+        }
+        [data-theme="light"] .hxh-range::-webkit-slider-thumb { border-color:#fff; }
+        [data-theme="light"] .hxh-range::-moz-range-thumb { border-color:#fff; }
+
+        /* Painel de detalhe */
+        .hxh-detail-panel {
+            margin-top:4px; padding:12px 14px;
+            background:rgba(255,255,255,0.04);
+            border:1px solid rgba(255,255,255,0.07);
+            border-radius:8px; font-size:.82rem;
+            color:var(--text-secondary); min-height:52px;
+            transition:all .2s;
+        }
+        [data-theme="light"] .hxh-detail-panel { background:#f1f5f9; border-color:#e2e8f0; }
+        .hxh-det-hora { font-size:.82rem; font-weight:700; color:var(--text); margin-bottom:8px; }
+        .hxh-det-grid { display:flex; flex-wrap:wrap; gap:8px 24px; }
+        .hxh-det-item { display:flex; flex-direction:column; gap:1px; }
+        .hxh-det-lbl { font-size:.62rem; font-weight:700; text-transform:uppercase;
+            letter-spacing:.5px; color:var(--text-secondary); }
+        .hxh-det-val { font-size:.9rem; font-weight:800; color:var(--text); }
+
+        /* Mobile */
+        @media (max-width:600px) {
+            .hxh-kpi-bar { gap:8px 16px; padding:10px; }
+            .hxh-kpi-item { min-width:80px; }
+            .hxh-track-outer { margin:0 4px 24px; height:64px; }
+            .hxh-drag-hint { display:none; }
+        }
+    </style>
+
+</head>
+<body>
+
+    <div id="user-settings-modal" class="modal-overlay">
+        <div class="modal-content">
+            <button class="close-btn" onclick="if(window.agriculturalDashboard) window.agriculturalDashboard.closeModal('user-settings-modal')" aria-label="Fechar"><i class="fas fa-times"></i></button>
+            <h3 id="modal-title">Configurações de Conta</h3>
+            <div id="modal-alert-message" class="alert-success-login hidden margin-bottom-10"></div>
+            <form id="update-password-form">
+                <input type="text" name="username" style="display:none" autocomplete="username">
+                <p class="text-secondary margin-bottom-15">Atualize sua senha. O email de redefinição será enviado para a sua conta atual.</p>
+                <input type="password" name="current-password" id="current-password" placeholder="Senha Atual (Obrigatório para Confirmação)" required autocomplete="current-password">
+                <input type="password" name="new-password" id="new-password" placeholder="Nova Senha (Mín. 6 caracteres)" required autocomplete="new-password">
+                <input type="password" name="confirm-password" id="confirm-new-password" placeholder="Confirme a Nova Senha" required autocomplete="new-password">
+                <button type="submit" class="btn-primary margin-bottom-10">
+                    <i class="fas fa-key"></i> Salvar Nova Senha
+                </button>
+                <p class="text-secondary modal-footer-text">
+                    Para alterar o e-mail, entre em contato com o administrador.
+                </p>
+            </form>
+        </div>
+    </div>
+
+    <div id="admin-user-modal" class="modal-overlay">
+        <div class="modal-content modal-content-medium">
+            <button class="close-btn" onclick="if(window.agriculturalDashboard) window.agriculturalDashboard.closeModal('admin-user-modal')" aria-label="Fechar"><i class="fas fa-times"></i></button>
+            <h3><i class="fas fa-user-shield"></i> Gerenciar Usuário</h3>
+            <form id="admin-user-form">
+                <input type="hidden" id="admin-user-id"> 
+                <div class="input-group-row margin-bottom-10">
+                    <input type="text" id="admin-user-nickname" name="username" autocomplete="username" placeholder="Apelido (Login)" required style="width: 100%;">
+                </div>
+                <div class="input-group-row margin-bottom-10">
+                    <input type="password" id="admin-user-password" name="admin-password" autocomplete="new-password" placeholder="Senha (Deixe em branco para manter)" style="width: 100%;">
+                </div>
+                <div class="permissions-container margin-bottom-15">
+                    <p class="text-secondary" style="margin-bottom: 5px;"><strong>Permissões de Acesso:</strong></p>
+                    <div class="checkbox-grid">
+                        <label><input type="checkbox" name="perm" value="tab-moagem"> Moagem</label>
+                        <label><input type="checkbox" name="perm" value="tab-consumo"> Consumo</label>
+                        <label><input type="checkbox" name="perm" value="tab-caminhao"> Caminhões</label>
+                        <label><input type="checkbox" name="perm" value="tab-equipamento"> Colheita</label>
+                        <label><input type="checkbox" name="perm" value="tab-frentes"> Frentes</label>
+                        <label><input type="checkbox" name="perm" value="tab-metas"> Metas</label>
+                        <label><input type="checkbox" name="perm" value="tab-horaria"> Entrega HxH</label>
+                        <label><input type="checkbox" name="perm" value="tab-visaoglobal"> Visão Global</label>
+                        <label><input type="checkbox" name="perm" value="tab-gerenciar"> Gerenciar (Admin)</label>
+                        <label><input type="checkbox" name="perm" value="tab-usuarios"> Usuários (Admin)</label>
+                    </div>
+                </div>
+                <button type="submit" class="btn-primary">
+                    <i class="fas fa-save"></i> Salvar Usuário
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div id="login-screen" class="full-screen-overlay">
+        <div class="login-container">
+            <h1>AgroAnalytics</h1>
+            <p>Acesse o painel com suas credenciais</p>
+            <div id="auth-error" class="alert-danger hidden"></div>
+            <div id="auth-success" class="alert-success-login hidden"></div>
+
+            <form id="login-form">
+                <input type="text" id="login-user" placeholder="Apelido ou E-mail" required autocomplete="username">
+                <input type="password" id="login-password" placeholder="Senha" required autocomplete="current-password">
+                
+                <div class="checkbox-container">
+                    <input type="checkbox" id="remember-me" checked>
+                    <label for="remember-me" style="cursor: pointer;">Manter conectado</label>
+                </div>
+
+                <div class="login-actions">
+                    <button type="submit" class="btn-primary">Entrar</button>
+                </div>
+                
+                <a href="#" id="forgot-password-link" class="btn-forgot">Esqueceu a senha? Redefinir</a>
+                
+                <p>Não tem conta? <a href="#" id="show-signup">Solicitar Cadastro</a></p>
+            </form>
+
+            <form id="signup-form" class="hidden">
+                <p>Preencha os dados abaixo para solicitar seu acesso. Responderemos em até 24h.</p>
+                <input type="text" id="signup-name" placeholder="Nome Completo / Apelido" required autocomplete="name">
+                <input type="email" id="signup-email" placeholder="E-mail (para recuperação)" required autocomplete="email">
+                <input type="tel" id="signup-phone" placeholder="Telefone/WhatsApp" required autocomplete="tel">
+                <button type="submit" class="btn-primary">Solicitar Cadastro</button>
+                <p>Já tem conta? <a href="#" id="show-login">Fazer Login</a></p>
+            </form>
+        </div>
+    </div>
+
+    <div id="main-dashboard" class="dashboard-layout hidden">
+        
+        <div id="loading-overlay" class="hidden">
+            <div class="loading-content">
+                <div class="loader-wrapper">
+                    <div class="loader"></div>
+                    <p>Carregando...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div id="particles-js"></div> 
+        
+        <header class="dashboard-header">
+            <div class="header-content">
+                <button class="menu-toggle-btn" id="menu-toggle-btn" aria-label="Abrir Menu">
+                    <i class="fas fa-bars"></i>
+                </button>
+
+                <div class="logo">
+                    <i class="fas fa-seedling"></i>
+                    <h1>AgroAnalytics</h1>
+                    <span class="beta-tag">MOAGEM</span>
+                </div>
+                
+                <div class="header-controls">
+                    <div class="turno-display-container" id="shiftDisplay">
+                        <div class="shift-progress-fill" id="shiftProgressFill"></div>
+                        <div class="shift-info-content">
+                            <i class="fas fa-clock selector-icon"></i>
+                            <span id="shiftName">Calculando...</span>
+                            <span id="shiftTimeRemaining" class="shift-timer">0%</span>
+                        </div>
+                    </div>
+
+                    <div id="lastWeighingDisplayContainer" class="last-weighing-container">
+                         <span id="refreshStatusText">Próxima atualização: --:-- 🔄️</span>
+                         <span id="lastWeighingText" style="display: none;">Última pesagem: N/A</span>
+                    </div>
+
+                    <button class="btn-cssbuttons">
+                        <span><i class="fas fa-ellipsis-h"></i> Ações</span>
+                        <ul>
+                            <li>
+                                <a href="#" onclick="event.preventDefault(); if(window.agriculturalDashboard) window.agriculturalDashboard.captureScreenshot()" title="Capturar Tela">
+                                    <i class="fas fa-camera"></i>
+                                </a>
+                            </li>
+                            <li>
+                                <a href="#" onclick="event.preventDefault(); if(window.agriculturalDashboard) window.agriculturalDashboard.openModal('user-settings-modal')" title="Configurações">
+                                    <i class="fas fa-user-cog"></i>
+                                </a>
+                            </li>
+                            <li>
+                                <a href="#" onclick="event.preventDefault(); if(window.agriculturalDashboard) window.agriculturalDashboard.toggleTheme()" title="Alternar Tema">
+                                    <i class="fas fa-sun" id="theme-icon"></i>
+                                </a>
+                            </li>
+                            <li>
+                                <a href="#" id="logout-btn" title="Sair">
+                                    <i class="fas fa-sign-out-alt"></i>
+                                </a>
+                            </li>
+                        </ul>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+
+
+        <section class="upload-fixed-top" id="uploadSection">
+            <div id="lastWeighingDisplayContainer2" class="last-weighing-container"></div>
+        </section>
+
+        <div id="menu-backdrop"></div>
+
+        <div id="tabs-nav-container" class="tabs-nav-container">
+
+            <!-- SEARCH — visible only inside mobile drawer -->
+            <div class="nav-search-wrap">
+                <input type="text" id="navSearchInput"
+                       class="nav-search-input"
+                       placeholder="Buscar aba…"
+                       oninput="window._navSearch(this.value)">
+            </div>
+
+            <!-- ── GRUPO: SISTEMA (sem Gerenciar/Usuarios — ficam no rodapé) ── -->
+            <div class="nav-group" data-group="sistema">
+                <div class="nav-group-label">
+                    <i class="fas fa-sliders-h nav-group-icon"></i>
+                    <span class="nav-group-text">Sistema</span>
+                </div>
+                <div class="nav-group-row">
+                    <button class="tab-button active" data-tab="tab-visaoglobal" onclick="safeShowTab('tab-visaoglobal')">
+                        <i class="fas fa-chart-pie"></i><span>Visão Global</span>
+                    </button>
+                    <button class="tab-button" data-tab="tab-horaria" onclick="safeShowTab('tab-horaria')">
+                        <i class="fas fa-clock"></i><span>Entrega HxH</span>
+                    </button>
+                    <button class="tab-button" data-tab="tab-frentes" onclick="safeShowTab('tab-frentes')">
+                        <i class="fas fa-map-marked-alt"></i><span>Frentes</span>
+                    </button>
+                    <button class="tab-button" data-tab="tab-metas" onclick="safeShowTab('tab-metas')">
+                        <i class="fas fa-bullseye"></i><span>Metas</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ── GRUPO: COLHEITA ── -->
+            <div class="nav-group" data-group="colheita">
+                <div class="nav-group-label nav-group-label--harvest">
+                    <i class="fas fa-tractor nav-group-icon"></i>
+                    <span class="nav-group-text">Colheita</span>
+                </div>
+                <div class="nav-group-row">
+                    <button class="tab-button" data-tab="tab-moagem" onclick="safeShowTab('tab-moagem')">
+                        <i class="fas fa-industry"></i><span>Moagem</span>
+                    </button>
+                    <button class="tab-button" data-tab="tab-equipamento" onclick="safeShowTab('tab-equipamento')">
+                        <i class="fas fa-tractor"></i><span>Colhedoras</span>
+                    </button>
+                    <button class="tab-button" data-tab="tab-consumo" onclick="safeShowTab('tab-consumo')">
+                        <i class="fas fa-gas-pump"></i><span>Consumo</span>
+                    </button>
+                    <button class="tab-button nav-oee-btn" data-tab="tab-oee-colhedoras" onclick="safeShowTab('tab-oee-colhedoras')">
+                        <i class="fas fa-chart-bar"></i><span>OEE Colh.</span><em class="nav-badge">OEE</em>
+                    </button>
+                    <button class="tab-button nav-oee-btn" data-tab="tab-eficiencia-operacional" onclick="safeShowTab('tab-eficiencia-operacional')">
+                        <i class="fas fa-tachometer-alt"></i><span>Eficiência</span><em class="nav-badge">OEE</em>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ── GRUPO: CAMINHÕES ── -->
+            <div class="nav-group" data-group="caminhoes">
+                <div class="nav-group-label nav-group-label--truck">
+                    <i class="fas fa-truck nav-group-icon"></i>
+                    <span class="nav-group-text">Caminhões</span>
+                </div>
+                <div class="nav-group-row">
+                    <button class="tab-button" data-tab="tab-caminhao" onclick="safeShowTab('tab-caminhao')">
+                        <i class="fas fa-truck"></i><span>Caminhões</span>
+                    </button>
+                    <button class="tab-button nav-oee-btn" data-tab="tab-oee-caminhoes" onclick="safeShowTab('tab-oee-caminhoes')">
+                        <i class="fas fa-chart-bar"></i><span>OEE Cam.</span><em class="nav-badge">OEE</em>
+                    </button>
+                    <button class="tab-button nav-oee-btn" data-tab="tab-comparativo-oee" onclick="safeShowTab('tab-comparativo-oee')">
+                        <i class="fas fa-balance-scale"></i><span>Comparativo</span><em class="nav-badge">OEE</em>
+                    </button>
+                    <button class="tab-button nav-oee-btn" data-tab="tab-gargalos" onclick="safeShowTab('tab-gargalos')">
+                        <i class="fas fa-exclamation-triangle"></i><span>Gargalos</span><em class="nav-badge nav-badge--warn">!</em>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ── GRUPO: ADMIN — sempre no rodapé ── -->
+            <div class="nav-group nav-group--admin" data-group="admin">
+                <div class="nav-group-label" style="opacity:0.6;">
+                    <i class="fas fa-shield-alt nav-group-icon"></i>
+                    <span class="nav-group-text">Admin</span>
+                </div>
+                <div class="nav-group-row">
+                    <button class="tab-button" data-tab="tab-gerenciar" onclick="safeShowTab('tab-gerenciar')">
+                        <i class="fas fa-cogs"></i><span>Gerenciar</span>
+                    </button>
+                    <button class="tab-button admin-tab" data-tab="tab-usuarios" onclick="safeShowTab('tab-usuarios')">
+                        <i class="fas fa-user-lock"></i><span>Usuários</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <main class="dashboard-main">
+            <div class="main-content-layout"> 
+                <section class="analytics-container"> 
+                    <div class="tabs-content">
+                        
+                        <div id="tab-gerenciar" class="tab-pane active">
+                            <div class="analytics-row">
+                                <div class="analytics-card glass-card full-width hover-zoom-card">
+                                    <div class="card-header">
+                                        <h3><i class="fas fa-tv"></i> Modo Apresentação (TV/Quiosque)</h3>
+                                    </div>
+                                    <div class="presentation-controls" style="display: flex; align-items: center; gap: 20px; padding: 10px;">
+                                        <div class="input-group-row" style="flex: 0 0 auto;">
+                                            <label for="presentation-timer">Tempo por Slide (seg):</label>
+                                            <input type="number" id="presentation-timer" value="20" min="5" 
+                                                   style="width: 80px; text-align: center; background: rgba(255,255,255,0.1); 
+                                                          border: 1px solid var(--glass-border); color: var(--text); 
+                                                          padding: 5px; border-radius: 4px;">
+                                        </div>
+                                        <button class="btn-primary" id="presentation-toggle-btn">
+                                            <i class="fas fa-tv"></i> INICIAR APRESENTAÇÃO
+                                        </button>
+                                    </div>
+                                    <!-- Checkboxes de abas para o quiosque — injetadas pelo modtv.js -->
+                                    <div id="presentation-tab-checkboxes" style="padding:0 10px 14px;"></div>
+                                </div>
+                            </div>
+
+                            <div class="analytics-row">
+                                <div class="analytics-card glass-card half-width hover-zoom-card">
+                                    <div class="card-header">
+                                        <h3><i class="fas fa-upload"></i> Carregamento de Dados</h3>
+                                    </div>
+                                    
+                                    <div class="dropzone-card glass-card upload-highlight" id="dropzoneCard"> 
+                                        <label for="fileInput" class="sr-only">Upload de Arquivo</label>
+                                        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" multiple webkitdirectory directory hidden>
+                                        
+                                        <div class="dropzone-content">
+                                            <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                                            <p class="drop-text">Arraste e Solte seus arquivos ou pastas aqui</p>
+                                            <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                                                <i class="fas fa-file-import"></i> Selecionar Arquivo
+                                            </button>
+                                        </div>
+                                        <div class="file-info-compact" id="fileInfo">Aguardando arquivo...</div>
+                                    </div>
+
+                                    <div class="info-section upload-info-section"> 
+                                        <h4>Instruções:</h4>
+                                        <p>Arraste e solte <strong>múltiplos arquivos</strong> ou uma <strong>pasta inteira</strong>
+                                            na área acima, ou utilize o botão 'Selecionar Arquivo'.</p>
+                                        <p>Formatos aceitos: Excel (.xlsx, .xls) e CSV</p>
+                                        <p class="upload-warning-text">
+                                            Aguarde a mensagem de "Arquivos carregados" ou "Falha no carregamento"
+                                            antes de interagir com as outras abas.
+                                        </p>
+                                        <div style="border-top:1px solid rgba(255,255,255,0.1);margin-top:14px;padding-top:14px">
+                                            <h4 style="margin:0 0 8px"><i class="fas fa-database"></i> Cache Offline (PWA)</h4>
+                                            <p style="font-size:13px;margin:0 0 10px;opacity:0.8">
+                                                Salve um snapshot JSON no seu dispositivo. Na próxima abertura sem internet,
+                                                o app carrega instantaneamente com os dados salvos.
+                                            </p>
+                                            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                                                <button onclick="window.agriculturalDashboard && window.agriculturalDashboard.exportarSnapshotJSON()"
+                                                    style="background:#2d7d32;color:#fff;border:none;border-radius:8px;
+                                                           padding:10px 16px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px">
+                                                    <i class="fas fa-download"></i> Baixar Snapshot JSON
+                                                </button>
+                                                <label style="background:#1565c0;color:#fff;border:none;border-radius:8px;
+                                                              padding:10px 16px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px">
+                                                    <i class="fas fa-upload"></i> Importar Snapshot JSON
+                                                    <input type="file" accept=".json" hidden 
+                                                        onchange="window.agriculturalDashboard && window.agriculturalDashboard.importarSnapshotJSON(this.files[0]).then(()=>this.value='')">
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="analytics-card glass-card half-width hover-zoom-card">
+                                    <div class="card-header">
+                                        <h3><i class="fas fa-clipboard-list"></i> Relatórios de Configuração</h3>
+                                    </div>
+                                    <div class="mini-list">
+                                        <p>Status de Conexão: <span class="success-color-bold">ATIVO</span></p>
+                                        <p>Usuário: <span id="current-user-email" class="primary-color">-</span></p>
+                                        <p>Última Configuração: <span class="primary-color">v1.3.0 - 2025-12-18</span></p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="tab-usuarios" class="tab-pane">
+                            <div class="sub-tabs-nav">
+                                <button class="tab-button active" onclick="if(window.agriculturalDashboard) window.agriculturalDashboard.showSubTab('subtab-gerenciar-acesso', this)">
+                                    <i class="fas fa-users-cog"></i> Gerenciar Acesso
+                                </button>
+                                <button class="tab-button" onclick="if(window.agriculturalDashboard) window.agriculturalDashboard.showSubTab('subtab-solicitacoes', this)">
+                                    <i class="fas fa-bell"></i> Solicitações (<span id="requests-count">0</span>)
+                                </button>
+                            </div>
+                            
+                            <div class="tabs-content-sub">
+                                <div id="subtab-gerenciar-acesso" class="tab-pane-sub active">
+                                    <div class="analytics-row">
+                                        <div class="analytics-card glass-card full-width hover-zoom-card">
+                                            <div class="card-header">
+                                                <h3><i class="fas fa-user-lock"></i> Gestão de Usuários (Login por Apelido)</h3>
+                                                <button class="btn-primary" onclick="window.agriculturalDashboard.openUserModal()">
+                                                    <i class="fas fa-plus"></i> Novo Usuário
+                                                </button>
+                                            </div>
+                                            <div id="user-management-container" class="meta-table-wrapper">
+                                                <p>Carregando dados de usuários...</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div id="subtab-solicitacoes" class="tab-pane-sub">
+                                    <div class="analytics-row">
+                                        <div class="analytics-card glass-card full-width hover-zoom-card">
+                                            <div class="card-header">
+                                                <h3><i class="fas fa-user-plus"></i> Solicitações Pendentes de Cadastro</h3>
+                                            </div>
+                                            <div id="registration-requests-container" class="meta-table-wrapper">
+                                                <p>Nenhuma solicitação pendente.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="tab-moagem" class="tab-pane">
+                            <div class="analytics-row">
+                                <div class="analytics-card glass-card full-width hover-zoom-card">
+                                    <div class="card-header">
+                                        <h3><i class="fas fa-info-circle"></i> Informativo Operacional</h3>
+                                    </div>
+                                    
+                                    <div class="info-grid-container">
+                                        <div class="info-compact-card highlight success-border">
+                                            <i class="fas fa-chart-line card-icon" style="color: var(--success);"></i>
+                                            <span class="card-value" id="acumuladoSafra">0,00 ton</span>
+                                            <span class="card-label">Acumulado Safra</span>
+                                            <div id="acumuladoSafraBarContainer"></div>
+                                        </div>
+
+                                        <div class="info-compact-card primary-border viagens-info">
+                                            <i class="fas fa-route card-icon" style="color: var(--primary);"></i>
+                                            <span class="card-value" id="totalViagens">0</span>
+                                            <span class="card-label">Total de Viagens</span>
+                                            <div class="viagens-stats">
+                                                <span class="viagens-pro"><span id="viagensProprias">0</span> Pró</span>
+                                                <span style="color: var(--text-secondary);">|</span>
+                                                <span class="viagens-terc"><span id="viagensTerceiros">0</span> Terc</span>
+                                            </div>
+                                        </div>
+
+                                        <div class="info-compact-card" style="border-left-color: rgb(33, 150, 243);" id="statAnalise">
+                                            <i class="fas fa-chart-bar card-icon" style="color: rgb(33, 150, 243);"></i>
+                                            <span class="card-value" style="color: rgb(33, 150, 243);" id="taxaAnalise">0%</span>
+                                            <span class="card-label">Taxa de Análise</span>
+                                        </div>
+
+                                        <div class="info-compact-card">
+                                            <i class="fas fa-bolt card-icon"></i>
+                                            <span class="card-value" id="avgPotencial3h">0 t/h</span>
+                                            <span class="card-label">Média Potencial (3H)</span>
+                                        </div>
+
+                                        <div class="info-compact-card">
+                                            <i class="fas fa-cogs card-icon"></i>
+                                            <span class="card-value" id="avgRotacao3h">0 RPM</span>
+                                            <span class="card-label">Média Rotação (3H)</span>
+                                        </div>
+
+                                        <div class="info-compact-card">
+                                            <i class="fas fa-industry card-icon"></i>
+                                            <span class="card-value" id="avgMoagem3h">0 t/h</span>
+                                            <span class="card-label">Média Moagem (3H)</span>
+                                        </div>
+
+                                        <div class="info-compact-card">
+                                            <i class="fas fa-tractor card-icon"></i>
+                                            <span class="card-value" id="dispColhedora">0.00 %</span>
+                                            <span class="card-label">Disp. Colhedora</span>
+                                        </div>
+
+                                        <div class="info-compact-card">
+                                            <i class="fas fa-exchange-alt card-icon"></i>
+                                            <span class="card-value" id="dispTransbordo">0.00 %</span>
+                                            <span class="card-label">Disp. Transbordo</span>
+                                        </div>
+
+                                        <div class="info-compact-card">
+                                            <i class="fas fa-truck card-icon"></i>
+                                            <span class="card-value" id="dispCaminhoes">0.00 %</span>
+                                            <span class="card-label">Disp. Caminhões</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="analytics-row fleet-status-row">
+                                <div class="analytics-card glass-card full-width hover-zoom-card" id="cardStatusFrota">
+                                    <div class="card-header">
+                                        <h3><i class="fas fa-truck-moving"></i> Status da Frota</h3>
+                                    </div>
+                                    <div class="fleet-status-grid" id="fleetStatusCardsGrid"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="analytics-row">
+                                <div class="analytics-card glass-card half-width hover-zoom-card">
+                                    <div class="card-header">
+                                        <div class="header-title-with-tooltip">
+                                            <h3><i class="fas fa-chart-bar"></i> Acumulado & Progresso</h3>
+                                            <div class="tooltip-container">
+                                                <i class="fas fa-info-circle info icon"></i>
+                                                <div class="tooltip-text">Acompanhamento do progresso da Moagem em relação à meta diária configurada.</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="moagem-control-panel">
+                                        <div class="acumulado-display">
+                                            <div class="acumulado-header">
+                                                <span class="acumulado-label">Acumulado do Dia</span>
+                                                <span class="acumulado-value" id="moagemAcumulado">0 t</span>
+                                            </div>
+                                            <div class="progress-container">
+                                                <div class="progress-bar" id="moagemProgressBar"></div>
+                                            </div>
+                                            <div class="progress-stats">
+                                                <span id="moagemPerc">0%</span> da Meta (<span id="moagemTargetDisplay">25000 t</span>)
+                                            </div>
+                                        </div>
+                                        <div class="meta-setting-rodape-moagem">
+                                            <div class="meta-item-rodape">
+                                                <label for="metaMoagemInput">Meta Moagem (t/h):</label>
+                                                <input type="number" id="metaMoagemInput" value="25000" class="moagem-input-discreto" onchange="window.agriculturalDashboard.saveMeta(this.value, 'metaMoagem')">
+                                            </div>
+                                            <div class="meta-item-rodape">
+                                                <label for="metaRotacaoInput">Meta Rotação (RPM):</label>
+                                                <input type="number" id="metaRotacaoInput" value="1100" class="moagem-input-discreto" onchange="window.agriculturalDashboard.saveMeta(this.value, 'metaRotacao')">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="analytics-card glass-card half-width hover-zoom-card">
+                                    <div class="card-header">
+                                        <div class="header-title-with-tooltip">
+                                            <h3><i class="fas fa-chart-line"></i> Projeção De Moagem</h3>
+                                            <div class="tooltip-container">
+                                                <i class="fas fa-info-circle icon"></i>
+                                                <div class="tooltip-text">Estima se a meta será atingida com base no ritmo atual.</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="forecast-panel">
+                                        <div class="forecast-main">
+                                            <span class="forecast-label">Previsão 24h</span>
+                                            <div class="forecast-value-group">
+                                                <span class="forecast-value-big" id="moagemForecast">0 t</span>
+                                                <span class="forecast-diff" id="forecastDifferenceContainer"></span> 
+                                            </div>
+                                            <span class="forecast-badge" id="moagemStatus">Calculando...</span>
+                                            <div class="owner-distribution-container" id="ownerDistributionBarContainer"></div>
+                                            <div class="ritmo-medio-info" id="ritmoAtualFormulaContainer"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="analytics-row">
+                                <div class="analytics-card glass-card full-width hover-zoom-card">
+                                    <div class="card-header">
+                                        <div class="header-title-with-tooltip">
+                                            <h3><i class="fas fa-chart-bar"></i> Visão Horária Detalhada</h3>
+                                            <div class="tooltip-container">
+                                                <i class="fas fa-info-circle icon"></i>
+                                                <div class="tooltip-text">Visualização detalhada do ritmo de moagem (Real, Potencial e Rotação) de hora em hora.</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="carousel-container wide" id="hourlyCarouselContainer">
+                                        <div class="carousel-slide active">
+                                            <div class="chart-container-title primary-color">Moagem(t/h)</div>
+                                            <div class="chart-container wide"><canvas id="realHourlyChart"></canvas></div>
+                                        </div>
+                                        <div class="carousel-slide">
+                                            <div class="chart-container-title potencial-color">Potencial(t/h)</div>
+                                            <div class="chart-container wide"><canvas id="potencialHourlyChart"></canvas></div>
+                                        </div>
+                                        <div class="carousel-slide">
+                                            <div class="chart-container-title rotacao-color">Rotação(RPM)</div>
+                                            <div class="chart-container wide"><canvas id="rotacaoHourlyChart"></canvas></div>
+                                        </div>
+                                        
+                                        <button class="carousel-nav prev-btn" aria-label="Gráfico Anterior"><i class="fas fa-chevron-left"></i></button>
+                                        <button class="carousel-nav next-btn" aria-label="Próximo Gráfico"><i class="fas fa-chevron-right"></i></button>
+                                        
+                                        <div class="carousel-indicators" id="carouselIndicators">
+                                            <span class="indicator active" onclick="window.agriculturalDashboard.showSlide(0)" aria-label="Ir para Gráfico 1"></span>
+                                            <span class="indicator" onclick="window.agriculturalDashboard.showSlide(1)" aria-label="Ir para Gráfico 2"></span>
+                                            <span class="indicator" onclick="window.agriculturalDashboard.showSlide(2)" aria-label="Ir para Gráfico 3"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="tab-consumo" class="tab-pane">
+                            <div class="analytics-row">
+                                <div class="analytics-card glass-card full-width">
+                                    <div id="consumo-tab-content" style="padding:4px 0;">
+                                        <div style="display:flex;align-items:center;gap:12px;padding:20px;
+                                            color:var(--text-secondary);font-size:0.9rem;">
+                                            <i class="fas fa-spinner fa-spin" style="color:var(--primary);font-size:1.2rem;"></i>
+                                            Carregando dados de consumo...
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="tab-caminhao" class="tab-pane">
+                            <style>
+                            /* ── CAMINHÕES TAB REDESIGN ── */
+                            .cam-root { display:flex; flex-direction:column; gap:18px; width:100%; }
+                            .cam-row  { display:grid; gap:16px; }
+                            .cam-row-3 { grid-template-columns: 1fr 1fr 1fr; }
+                            @media(max-width:900px) { .cam-row-3 { grid-template-columns:1fr; } }
+                            .cam-card {
+                                background: rgba(10,16,30,0.7);
+                                border: 1px solid rgba(0,212,255,0.12);
+                                border-radius: 14px; padding: 20px;
+                                position: relative; overflow: hidden;
+                                backdrop-filter: blur(12px);
+                            }
+                            .cam-card::before {
+                                content:''; position:absolute; top:0; left:0; right:0; height:2px;
+                                background: linear-gradient(90deg, transparent, #2196F3, transparent);
+                                opacity:0.6;
+                            }
+                            [data-theme="light"] .cam-card {
+                                background: rgba(255,255,255,0.85);
+                                border-color: rgba(0,120,180,0.15);
+                            }
+                            .cam-card-title {
+                                font-size:0.72rem; font-weight:800; text-transform:uppercase;
+                                letter-spacing:0.08em; color:#2196F3; opacity:0.85;
+                                display:flex; align-items:center; gap:8px; margin-bottom:16px;
+                            }
+                            .cam-bar-list { display:flex; flex-direction:column; gap:10px; }
+                            .cam-bar-item { display:flex; flex-direction:column; gap:4px; }
+                            .cam-bar-meta { display:flex; justify-content:space-between; align-items:baseline; }
+                            .cam-bar-name { font-size:0.78rem; font-weight:700; color:var(--text); white-space:nowrap; overflow:visible; max-width:none; }
+                            .cam-bar-val  { font-size:0.75rem; font-weight:800; color:#2196F3; }
+                            /* Tema claro: textos pretos */
+                            [data-theme="light"] .cam-card-title { color: #111 !important; opacity:1; }
+                            [data-theme="light"] .cam-bar-name   { color: #111 !important; }
+                            [data-theme="light"] .cam-bar-val    { color: #111 !important; }
+                            .cam-bar-track { height:6px; background:rgba(255,255,255,0.07); border-radius:3px; overflow:hidden; }
+                            .cam-bar-fill  { height:100%; border-radius:3px; transition:width .6s cubic-bezier(.34,1.2,.64,1); }
+                            .cam-chart-full { width:100%; min-height:240px; }
+                            </style>
+
+                            <div class="cam-root">
+                                <!-- Row 1: Gráfico de barras verticais (full width) -->
+                                <div class="cam-card">
+                                    <div class="cam-card-title"><i class="fas fa-chart-bar"></i> Entrega Horária — Própria vs Terceiros</div>
+                                    <div class="cam-chart-full"><canvas id="fleetHourlyChartInCaminhoes"></canvas></div>
+                                </div>
+
+                                <!-- Row 2: Rankings + Donut -->
+                                <div class="cam-row cam-row-3">
+                                    <div class="cam-card">
+                                        <div class="cam-card-title"><i class="fas fa-truck"></i> Top 5 — Próprios (31xxx)</div>
+                                        <div class="cam-bar-list" id="topFrotasProprias"></div>
+                                    </div>
+                                    <div class="cam-card">
+                                        <div class="cam-card-title"><i class="fas fa-handshake"></i> Top 5 — Terceiros (91xxx)</div>
+                                        <div class="cam-bar-list" id="topFrotasTerceiros"></div>
+                                    </div>
+                                    <div class="cam-card">
+                                        <div class="cam-card-title"><i class="fas fa-chart-pie"></i> Distribuição de Peso — Própria vs Terceiros</div>
+                                        <div style="min-height:200px;display:flex;align-items:center;justify-content:center;">
+                                            <canvas id="fleetChart"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="tab-equipamento" class="tab-pane">
+                            <style>
+                            /* ── COLHEDORAS TAB: FUTURISTIC REDESIGN ── */
+                            .colh-root { display:flex; flex-direction:column; gap:18px; width:100%; }
+                            .colh-row  { display:grid; gap:16px; }
+                            .colh-row-2 { grid-template-columns: 1fr 1fr; }
+                            .colh-row-3 { grid-template-columns: 1fr 1fr 1fr; }
+                            @media(max-width:900px) { .colh-row-2,.colh-row-3 { grid-template-columns:1fr; } }
+
+                            .colh-card {
+                                background: rgba(10,16,30,0.7);
+                                border: 1px solid rgba(0,212,255,0.12);
+                                border-radius: 14px;
+                                padding: 20px;
+                                position: relative;
+                                overflow: hidden;
+                                backdrop-filter: blur(12px);
+                            }
+                            .colh-card::before {
+                                content:''; position:absolute; top:0; left:0; right:0; height:2px;
+                                background: linear-gradient(90deg, transparent, var(--primary), transparent);
+                                opacity:0.6;
+                            }
+                            [data-theme="light"] .colh-card {
+                                background: rgba(255,255,255,0.85);
+                                border-color: rgba(0,120,180,0.15);
+                            }
+
+                            .colh-card-title {
+                                font-size: 0.72rem; font-weight:800; text-transform:uppercase;
+                                letter-spacing:0.08em; color: var(--primary); opacity:0.8;
+                                display:flex; align-items:center; gap:8px; margin-bottom:16px;
+                            }
+                            .colh-card-title i { font-size:0.9rem; }
+
+                            /* Donut chart container */
+                            .colh-donut-wrap {
+                                position:relative; display:flex;
+                                align-items:center; justify-content:center;
+                                min-height:220px; padding: 8px;
+                            }
+                            .colh-donut-wrap canvas { max-height:220px; max-width:220px; }
+
+                            /* Horizontal bar list */
+                            .colh-bar-list { display:flex; flex-direction:column; gap:10px; }
+                            .colh-bar-item { display:flex; flex-direction:column; gap:4px; }
+                            .colh-bar-meta { display:flex; justify-content:space-between; align-items:baseline; }
+                            .colh-bar-name {
+                                font-size:0.78rem; font-weight:700;
+                                color: var(--text); white-space:nowrap;
+                                overflow:visible; max-width:none;
+                            }
+                            .colh-bar-val  { font-size:0.75rem; font-weight:800; color:var(--primary); }
+                            /* Tema claro: textos pretos */
+                            [data-theme="light"] .colh-card-title { color: #111 !important; opacity:1; }
+                            [data-theme="light"] .colh-bar-name   { color: #111 !important; }
+                            [data-theme="light"] .colh-bar-val    { color: #111 !important; }
+                            .colh-bar-track { height:6px; background:rgba(255,255,255,0.07); border-radius:3px; overflow:hidden; }
+                            .colh-bar-fill  { height:100%; border-radius:3px; transition:width .6s cubic-bezier(.34,1.2,.64,1); }
+
+                            .colh-rank-badge {
+                                display:inline-flex; align-items:center; justify-content:center;
+                                width:20px; height:20px; border-radius:50%;
+                                font-size:0.65rem; font-weight:900; flex-shrink:0;
+                            }
+                            .colh-rank-1 { background:#FFD700; color:#000; }
+                            .colh-rank-2 { background:#C0C0C0; color:#000; }
+                            .colh-rank-3 { background:#CD7F32; color:#fff; }
+                            .colh-rank-n { background:rgba(255,255,255,0.1); color:var(--text); }
+                            </style>
+
+                            <div class="colh-root">
+                                <!-- Row 1: Donut + Top Colhedoras Próprias + Top Colhedoras Terceiras -->
+                                <div class="colh-row colh-row-3">
+                                    <div class="colh-card">
+                                        <div class="colh-card-title"><i class="fas fa-chart-pie"></i> Distribuição Produtividade</div>
+                                        <div class="colh-donut-wrap">
+                                            <canvas id="harvestChart"></canvas>
+                                        </div>
+                                    </div>
+                                    <div class="colh-card">
+                                        <div class="colh-card-title"><i class="fas fa-tractor"></i> Top 5 Colhedoras — Próprias</div>
+                                        <div class="colh-bar-list" id="topEquipamentosProprios"></div>
+                                    </div>
+                                    <div class="colh-card">
+                                        <div class="colh-card-title"><i class="fas fa-handshake"></i> Top 5 Colhedoras — Terceiras</div>
+                                        <div class="colh-bar-list" id="topEquipamentosTerceiros"></div>
+                                    </div>
+                                </div>
+                                <!-- Row 2: Top Operadores + Top Transbordos -->
+                                <div class="colh-row colh-row-2">
+                                    <div class="colh-card">
+                                        <div class="colh-card-title"><i class="fas fa-hard-hat"></i> Top 5 Operadores — Colheita Própria</div>
+                                        <div class="colh-bar-list" id="topOperadoresColheitaPropria"></div>
+                                    </div>
+                                    <div class="colh-card">
+                                        <div class="colh-card-title"><i class="fas fa-truck-loading"></i> Top 5 Transbordos — Terceiros</div>
+                                        <div class="colh-bar-list" id="topTransbordos"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="tab-frentes" class="tab-pane">
+                            <div class="analytics-row">
+                                <div class="analytics-card glass-card full-width">
+                                    <div class="card-header">
+                                        <div class="header-title-with-tooltip">
+                                            <h3><i class="fas fa-map-pin"></i> Visão por Frente de Trabalho</h3>
+                                            <div class="tooltip-container">
+                                                <i class="fas fa-info-circle icon"></i>
+                                                <div class="tooltip-text">
+                                                    <strong>Regra de Ranking:</strong><br>
+                                                    1º Maior Ton Total<br>
+                                                    2º Menor Nº Viagens<br>
+                                                    3º Melhor Ton/Viagem<br>
+                                                    4º Maior Nº Análises
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="fronts-grid" id="frontsGrid"></div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="tab-metas" class="tab-pane">
+                            <div class="analytics-row">
+                                <div class="analytics-card glass-card full-width">
+                                    <div class="card-header">
+                                        <h3><i class="fas fa-bullseye"></i> Metas e Indicadores por Frente</h3>
+                                    </div>
+                                    <div id="frontsMetaContainer" class="fronts-grid"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="tab-horaria" class="tab-pane">
+
+                            <!-- ── LINHA DO TEMPO HORÁRIA (06:00 → 05:59) ── -->
+                            <div class="analytics-row">
+                                <div class="analytics-card glass-card full-width">
+                                    <div class="card-header">
+                                        <div class="header-title-with-tooltip">
+                                            <h3><i class="fas fa-timeline"></i> Linha do Tempo — Entrega por Hora</h3>
+                                            <div class="tooltip-container">
+                                                <i class="fas fa-info-circle icon"></i>
+                                                <div class="tooltip-text">Progresso hora a hora desde o início do dia agrícola (06:00). Cada bloco representa uma hora.</div>
+                                            </div>
+                                        </div>
+                                        <span style="font-size:0.75rem;color:var(--text-secondary)">
+                                            <i class="fas fa-clock" style="margin-right:4px"></i>
+                                            Dia agrícola: 06:00 → 05:59
+                                        </span>
+                                    </div>
+                                    <div id="hxh-timeline-container" style="padding:0 4px 8px">
+                                        <!-- Preenchido pelo JS via renderHxHTimeline() -->
+                                        <div style="padding:20px;text-align:center;color:var(--text-secondary);font-size:0.85rem">
+                                            <i class="fas fa-spinner fa-spin" style="margin-right:8px"></i>
+                                            Aguardando dados...
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- ── GRÁFICO DE VIAGENS 24H ── -->
+                            <div class="analytics-row">
+                                <div class="analytics-card glass-card full-width hover-zoom-card">
+                                    <div class="card-header">
+                                        <div class="header-title-with-tooltip">
+                                            <h3><i class="fas fa-clock"></i> Viagens e Análise por Hora</h3>
+                                            <div class="tooltip-container">
+                                                <i class="fas fa-info-circle icon"></i>
+                                                <div class="tooltip-text">Fluxo de viagens e taxa de análise ao longo do dia agrícola (06:00 → 05:59).</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="chart-container wide"><canvas id="timeChart"></canvas></div>
+                                </div>
+                            </div>
+
+                            <!-- ── ENTREGA POR FRENTE ── -->
+                            <div class="analytics-row">
+                                <div class="analytics-card glass-card full-width hover-zoom-card">
+                                    <div class="card-header" style="display: flex; align-items: center; justify-content: space-between;">
+                                        <div class="header-title-with-tooltip">
+                                            <h3><i class="fas fa-calendar-alt"></i> Entrega de Peso por Frente</h3>
+                                            <div class="tooltip-container">
+                                                <i class="fas fa-info-circle icon"></i>
+                                                <div class="tooltip-text">Volume horário entregue por cada frente.</div>
+                                            </div>
+                                        </div>
+                                        <fieldset id="front-filter-switch" class="radio-switch">
+                                            <input name="front-switch" id="filter-propria" type="radio" onclick="if(window.filterFrontChart) window.filterFrontChart('propria')">
+                                            <label for="filter-propria">Própria</label>
+                                            <input name="front-switch" id="filter-terceira" type="radio" onclick="if(window.filterFrontChart) window.filterFrontChart('terceira')">
+                                            <label for="filter-terceira">Terceira</label>
+                                            <input checked name="front-switch" id="filter-todas" type="radio" onclick="if(window.filterFrontChart) window.filterFrontChart('todas')">
+                                            <label for="filter-todas">Todas</label>
+                                        </fieldset>
+                                    </div>
+                                    <div class="chart-container wide"><canvas id="frontHourlyChart"></canvas></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ══════════════════════════════════════════════════ -->
+                        <!-- VISÃO GLOBAL — Análise Executiva                  -->
+                        <!-- ══════════════════════════════════════════════════ -->
+                        <div id="tab-visaoglobal" class="tab-pane">
+                            <div class="analytics-row">
+                                <div class="analytics-card glass-card full-width">
+                                    <div id="visaoglobal-content" style="padding:4px 0;">
+                                        <div style="display:flex;align-items:center;gap:12px;padding:20px;
+                                            color:var(--text-secondary);font-size:0.9rem;">
+                                            <i class="fas fa-spinner fa-spin" style="color:var(--primary);font-size:1.2rem;"></i>
+                                            Carregando análise global...
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ═══════════════════════════════════════════════════════
+                             NOVAS ABAS OEE / TMD / EFICIÊNCIA / GARGALOS
+                             Renderizadas dinamicamente por visualizer-oee.js
+                             ═══════════════════════════════════════════════════ -->
+
+                        <div id="tab-oee-colhedoras" class="tab-pane" style="display:none;">
+                            <div class="analytics-row"><div class="analytics-card glass-card full-width">
+                                <div id="oee-colhedoras-content" style="padding:4px 0;">
+                                    <div style="padding:60px 20px;text-align:center;">
+                                        <i class="fas fa-tractor" style="font-size:3rem;color:var(--primary);opacity:0.4;"></i>
+                                        <p style="margin-top:16px;color:var(--text);">Carregando dados OEE...</p>
+                                    </div>
+                                </div>
+                            </div></div>
+                        </div>
+
+                        <div id="tab-oee-caminhoes" class="tab-pane" style="display:none;">
+                            <div class="analytics-row"><div class="analytics-card glass-card full-width">
+                                <div id="oee-caminhoes-content" style="padding:4px 0;">
+                                    <div style="padding:60px 20px;text-align:center;">
+                                        <i class="fas fa-truck" style="font-size:3rem;color:var(--primary);opacity:0.4;"></i>
+                                        <p style="margin-top:16px;color:var(--text);">Carregando dados OEE...</p>
+                                    </div>
+                                </div>
+                            </div></div>
+                        </div>
+
+                        <div id="tab-comparativo-oee" class="tab-pane" style="display:none;">
+                            <div class="analytics-row"><div class="analytics-card glass-card full-width">
+                                <div class="oee-tab-wrapper" style="padding:4px 0;">
+                                    <div style="padding:60px 20px;text-align:center;">
+                                        <i class="fas fa-balance-scale" style="font-size:3rem;color:var(--primary);opacity:0.4;"></i>
+                                        <p style="margin-top:16px;color:var(--text);">Carregando comparativo OEE...</p>
+                                    </div>
+                                </div>
+                            </div></div>
+                        </div>
+
+                        <div id="tab-eficiencia-operacional" class="tab-pane" style="display:none;">
+                            <div class="analytics-row"><div class="analytics-card glass-card full-width">
+                                <div style="padding:60px 20px;text-align:center;">
+                                    <i class="fas fa-tachometer-alt" style="font-size:3rem;color:var(--primary);opacity:0.4;"></i>
+                                    <p style="margin-top:16px;color:var(--text);">Disponível na próxima versão.</p>
+                                </div>
+                            </div></div>
+                        </div>
+
+                        <div id="tab-gargalos" class="tab-pane" style="display:none;">
+                            <div class="analytics-row"><div class="analytics-card glass-card full-width">
+                                <div class="oee-tab-wrapper" style="padding:4px 0;">
+                                    <div style="padding:60px 20px;text-align:center;">
+                                        <i class="fas fa-exclamation-triangle" style="font-size:3rem;color:var(--warning);opacity:0.4;"></i>
+                                        <p style="margin-top:16px;color:var(--text);">Carregando análise de gargalos...</p>
+                                    </div>
+                                </div>
+                            </div></div>
+                        </div>
+
+                    </div>
+                </section>
+            </div>
+        </main>
+        <footer class="dashboard-footer"></footer>
+    </div>
+
+    <div id="orientation-alert">
+        <i class="fas fa-mobile-alt" style="font-size: 4rem; color: #00D4FF; margin-bottom: 20px; animation: rotate-phone 2s infinite ease-in-out;"></i>
+        <h2 style="color: #E0E0E0; margin-bottom: 10px; font-size: 1.5rem; font-family: sans-serif;">Gire o celular</h2>
+        <p style="color: #A0A0A0; font-size: 1rem; max-width: 300px; font-family: sans-serif;">Para visualizar os gráficos, por favor use o aparelho na horizontal.</p>
+    </div>
+
+    <!-- ═══ CORE: Utilitários e processadores de dados ═══ -->
+    <script src="js/shared/utils.js"></script>
+    <script src="js/core/intelligent-processor.js"></script>
+    <script src="js/core/data-analyzer-kpis.js"></script>
+    <script src="js/core/data-analyzer-rankings.js"></script>
+    <script src="js/core/data-analyzer-time.js"></script>
+    <script src="js/core/data-analyzer-metas.js"></script>
+    <script src="js/core/dataanalyzer.js"></script>
+    <script src="js/core/datavalidator.js"></script>
+    <script src="js/core/datavisualizer.js"></script>
+
+    <!-- ═══ MOAGEM: 5 módulos por responsabilidade ═══ -->
+    <script src="js/Moagem/InformativoOperacional.js"></script>
+    <script src="js/Moagem/StatusDaFrota.js"></script>
+    <script src="js/Moagem/AcumuladoEProgresso.js"></script>
+    <script src="js/Moagem/ProjecaoDeMoagem.js"></script>
+    <script src="js/Moagem/VisaoHorariaDetalhada_charts.js"></script>
+    <script src="js/Moagem/AcumuladoEProgresso_charts.js"></script>
+
+    <!-- ═══ ENTREGA HXH: 3 módulos por responsabilidade ═══ -->
+    <script src="js/EntregaHXH/TimelineHXH.js"></script>
+    <script src="js/EntregaHXH/ViagensPorHora.js"></script>
+    <script src="js/EntregaHXH/PesoPorFrente.js"></script>
+
+    <!-- ═══ CAMINHÕES: 2 módulos por responsabilidade ═══ -->
+    <script src="js/Caminhoes/RankingCaminhoes.js"></script>
+    <script src="js/Caminhoes/GraficoRotaCaminhoes.js"></script>
+
+    <!-- ═══ COLHEDORAS: 2 módulos por responsabilidade ═══ -->
+    <script src="js/Colhedoras/RankingColhedoras.js"></script>
+    <script src="js/Colhedoras/GraficoDisponibilidade.js"></script>
+
+    <!-- ═══ USUÁRIOS: 2 módulos por responsabilidade ═══ -->
+    <script src="js/Usuarios/FormUsuario.js"></script>
+    <script src="js/Usuarios/ListaUsuarios.js"></script>
+
+    <!-- ═══ FRENTE DE TRABALHO / METAS / CONSUMO / VISÃO GLOBAL ═══ -->
+    <script src="js/FrenteDeTrabalho/FrenteGrid.js"></script>
+    <script src="js/Metas/MetasGrid.js"></script>
+    <script src="js/Consumo/ConsumoPerformance.js"></script>
+    <script src="js/VisaoGlobal/VisaoGlobal.js"></script>
+
+    <!-- ═══ OEE / TPL ═══ -->
+    <script src="js/shared/oee-fleet-classifier.js"></script>
+    <script src="js/OEE/Oee_analyzer.js"></script>
+    <script src="js/OEE/OEE_renderer.js"></script>
+    <script src="js/OEE/OEE_unified.js"></script>
+    <script src="js/OEE/OEE_tpl_renderer.js"></script>
+    <script src="js/OEE/OEE_tpl_analysis.js"></script>
+
+    <!-- ═══ MOBILE / MODTV ═══ -->
+    <script src="js/shared/Mobile_revolution.js"></script>
+    <script src="js/shared/modtv.js"></script>
+
+    <!-- ═══ ORQUESTRADOR PRINCIPAL ═══ -->
+    <script src="app.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const loginScreen = document.getElementById('login-screen');
+            const mainDashboard = document.getElementById('main-dashboard');
+            const loginForm = document.getElementById('login-form');
+            const signupForm = document.getElementById('signup-form');
+            const showSignupLink = document.getElementById('show-signup');
+            const showLoginLink = document.getElementById('show-login');
+            const authError = document.getElementById('auth-error');
+            const logoutBtn = document.getElementById('logout-btn');
+            const currentUserEmail = document.getElementById('current-user-email');
+            
+            // Inicializa eventos se o dashboard já estiver carregado
+            if (typeof window.agriculturalDashboard !== 'undefined') {
+                window.agriculturalDashboard.initializeEventListeners();
+            }
+
+            auth.onAuthStateChanged((user) => {
+                if (user) {
+                    loginScreen.classList.add('hidden');
+                    mainDashboard.classList.remove('hidden');
+                    if(user.displayName) {
+                        currentUserEmail.textContent = user.displayName;
+                    } else {
+                        let display = user.email || "";
+                        if(display && display.includes('@agro.local')) {
+                            display = display.split('@')[0];
+                        }
+                        currentUserEmail.textContent = display;
+                    }
+                } else {
+                    mainDashboard.classList.add('hidden');
+                    loginScreen.classList.remove('hidden');
+                }
+            });
+
+            loginForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                if (typeof window.agriculturalDashboard !== 'undefined' && window.agriculturalDashboard.handleLogin) {
+                    window.agriculturalDashboard.handleLogin(e); 
+                    return;
+                }
+                // Fallback de login básico se o app.js não carregou
+                const userIdentifier = document.getElementById('login-user').value;
+                const password = document.getElementById('login-password').value;
+                auth.signInWithEmailAndPassword(userIdentifier, password)
+                    .then((userCredential) => {
+                        authError.classList.add('hidden');
+                        loginForm.reset();
+                    })
+                    .catch((error) => {
+                        authError.textContent = error.message;
+                        authError.classList.remove('hidden');
+                    });
+            });
+
+            signupForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                if (typeof window.agriculturalDashboard !== 'undefined' && window.agriculturalDashboard.handleSignup) {
+                    window.agriculturalDashboard.handleSignup(e);
+                } else {
+                    authError.textContent = "Erro: O sistema de cadastro não está pronto. Tente novamente mais tarde.";
+                    authError.classList.remove('hidden');
+                }
+            });
+
+            showSignupLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                authError.classList.add('hidden');
+                document.getElementById('auth-success').classList.add('hidden');
+                loginForm.classList.add('hidden');
+                signupForm.classList.remove('hidden');
+            });
+
+            showLoginLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                authError.classList.add('hidden');
+                document.getElementById('auth-success').classList.add('hidden');
+                signupForm.classList.add('hidden');
+                loginForm.classList.remove('hidden');
+            });
+
+            const forgotPasswordLink = document.getElementById('forgot-password-link');
+            if (forgotPasswordLink) {
+                 forgotPasswordLink.addEventListener('click', (e) => {
+                     e.preventDefault();
+                     if (typeof window.agriculturalDashboard !== 'undefined' && window.agriculturalDashboard.handleForgotPassword) {
+                         window.agriculturalDashboard.handleForgotPassword(e);
+                     }
+                 });
+            }
+
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', () => {
+                    auth.signOut().catch((error) => {
+                        console.error('Erro ao fazer logout:', error);
+                    });
+                });
+            }
+
+            window.filterFrontChart = function(type) {
+                if (!window.agriculturalDashboard || !window.agriculturalDashboard.data) return;
+                
+                const dashboard = window.agriculturalDashboard;
+                const allData = dashboard.data;
+                const analyzer = dashboard.analyzer;
+                
+                if (!analyzer || !analyzer.timeModule || !analyzer.timeModule.analyzeFrontHourlyComplete) return;
+
+                const fullHourlyData = analyzer.timeModule.analyzeFrontHourlyComplete(allData);
+
+                const propriaSet = new Set();
+                
+                allData.forEach(row => {
+                    const frenteCode = String(row.frente || '').trim();
+                    const frenteNum = parseInt(frenteCode.replace(/\D/g, '')) || 0;
+                    
+                    if (frenteNum > 0 && frenteNum < 30) {
+                        propriaSet.add(frenteCode);
+                    }
+                });
+
+                if (dashboard.visualizer && dashboard.visualizer.chartsBaseRenderer) {
+                    const theme = dashboard.visualizer.getThemeConfig();
+                    dashboard.visualizer.chartsBaseRenderer.createFrontHourlyChart(fullHourlyData, theme, type, propriaSet);
+                }
+            };
+        });
+    </script>
+
+    <script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>

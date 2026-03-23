@@ -1,0 +1,483 @@
+/* oee-styles.css
+   ============================================================
+   Estilos das abas OEE / TMD / Gargalos / Eficiência
+   Complementa style.css sem sobreescrever regras existentes.
+   ============================================================ */
+
+/* ── WRAPPER GERAL ─────────────────────────────────────────── */
+.oee-tab-wrapper {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* ── HEADER DAS ABAS OEE ───────────────────────────────────── */
+.oee-header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.oee-header-bar h2 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0;
+}
+
+.oee-modelo-badge {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 4px 12px;
+    border-radius: 20px;
+    max-width: 100%;
+}
+
+/* ── PROXY BADGE ───────────────────────────────────────────── */
+.proxy-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: rgba(255, 184, 0, 0.2);
+    border: 1px solid rgba(255, 184, 0, 0.5);
+    color: #FFB800;
+    padding: 1px 6px;
+    border-radius: 4px;
+    vertical-align: middle;
+    margin-left: 4px;
+}
+
+/* ── OEE TRIPLE CARD ───────────────────────────────────────── */
+.oee-triple-card {
+    flex: 1;
+    min-width: 280px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.oee-triple-header {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.oee-main-value {
+    font-size: 2.6rem;
+    font-weight: 900;
+    text-align: center;
+    padding: 8px 0;
+}
+
+.oee-value { display: block; }
+.oee-success { color: #40800c; }
+.oee-warning { color: #FFB800; }
+.oee-danger  { color: #FF2E63; }
+.oee-sem-dado { color: var(--text-secondary); font-size: 1.4rem; }
+
+.oee-triple-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding-top: 12px;
+}
+
+.oee-component {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.oee-comp-label {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+.oee-comp-val {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+    text-align: center;
+}
+
+.oee-nota {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    text-align: center;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    padding-top: 8px;
+}
+
+/* ── TMD CARDS ─────────────────────────────────────────────── */
+.tmd-cards-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 4px;
+}
+
+@media (max-width: 900px) {
+    .tmd-cards-row { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 500px) {
+    .tmd-cards-row { grid-template-columns: 1fr; }
+}
+
+.tmd-card {
+    background: var(--glass-bg, rgba(255,255,255,0.04));
+    border: 1px solid var(--glass-border, rgba(255,255,255,0.1));
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.tmd-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.tmd-val {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: var(--text);
+}
+
+.tmd-sub {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+}
+
+.tmd-formula {
+    font-size: 0.7rem;
+    color: var(--primary, #00D4FF);
+    cursor: help;
+    align-self: flex-start;
+}
+
+/* ── SECTION TITLE ─────────────────────────────────────────── */
+.section-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 4px 0 2px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+/* ── OEE TABLE ─────────────────────────────────────────────── */
+.table-responsive-oee {
+    overflow-x: auto;
+    max-height: 420px;
+    overflow-y: auto;
+}
+
+.oee-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.83rem;
+}
+
+.oee-table thead tr {
+    background: rgba(255,255,255,0.06);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.oee-table th, .oee-table td {
+    padding: 7px 10px;
+    text-align: left;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    white-space: nowrap;
+}
+
+.oee-table th {
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.oee-table tbody tr:hover {
+    background: rgba(255,255,255,0.04);
+}
+
+.td-causa {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: help;
+    color: var(--text-secondary);
+}
+
+.comparativo-table th:first-child, .comparativo-table td:first-child {
+    min-width: 140px;
+}
+
+/* ── OEE BADGES ────────────────────────────────────────────── */
+.badge-oee {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 0.82rem;
+}
+
+.badge-success { background: rgba(64,128,12,0.25); color: #40800c; border: 1px solid #40800c55; }
+.badge-warning { background: rgba(255,184,0,0.2);  color: #FFB800; border: 1px solid #FFB80055; }
+.badge-danger  { background: rgba(255,46,99,0.2);  color: #FF2E63; border: 1px solid #FF2E6355; }
+.badge-sem-dado { background: rgba(128,128,128,0.15); color: #888; border: 1px solid #88888855; }
+
+/* ── BADGE CATEGORIA ───────────────────────────────────────── */
+.badge-cat {
+    display: inline-block;
+    font-size: 0.72rem;
+    padding: 1px 7px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.1);
+    color: var(--text-secondary);
+}
+
+.badge-cat-op {
+    display: inline-block;
+    font-size: 0.72rem;
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-weight: 600;
+}
+
+.badge-produtivo         { background: rgba(64,128,12,0.2); color: #40800c; }
+.badge-parada_operacional{ background: rgba(255,184,0,0.2); color: #FFB800; }
+.badge-parada_mecanica   { background: rgba(255,46,99,0.2);  color: #FF2E63; }
+.badge-improdutivo       { background: rgba(128,128,128,0.2); color: #888; }
+.badge-deslocamento      { background: rgba(123,97,255,0.2); color: #7B61FF; }
+
+/* ── PRIORIDADE ────────────────────────────────────────────── */
+.prioridade-CRÍTICA { color: #FF2E63; font-weight: 700; font-size: 0.82rem; }
+.prioridade-ALTA    { color: #FFB800; font-weight: 700; font-size: 0.82rem; }
+.prioridade-MÉDIA   { color: #00D4FF; font-weight: 600; font-size: 0.82rem; }
+
+/* ── KPI ROW OEE ───────────────────────────────────────────── */
+.kpi-row-oee {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+}
+
+@media (max-width: 768px) {
+    .kpi-row-oee { grid-template-columns: repeat(2, 1fr); }
+}
+
+.color-proprio  { color: #40800c; }
+.color-terceiro { color: #FF8C00; }
+
+/* ── GANHO DESTAQUE ────────────────────────────────────────── */
+.ganho-destaque {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 20px 24px;
+    border-left: 5px solid var(--primary, #00D4FF);
+}
+
+.ganho-icone { font-size: 2.5rem; }
+
+.ganho-texto {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ganho-texto strong { font-size: 0.9rem; color: var(--text-secondary); }
+.ganho-valor { font-size: 2rem; font-weight: 900; color: var(--primary, #00D4FF); }
+.ganho-sub   { font-size: 0.78rem; color: var(--text-secondary); }
+
+/* ── INSIGHTS ──────────────────────────────────────────────── */
+.insights-card { }
+
+.insights-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 0;
+}
+
+.insight-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    line-height: 1.4;
+}
+
+.insight-comparativo { background: rgba(0,212,255,0.07); border-left: 3px solid #00D4FF; }
+.insight-alerta      { background: rgba(255,184,0,0.08); border-left: 3px solid #FFB800; }
+.insight-oportunidade{ background: rgba(64,128,12,0.1);  border-left: 3px solid #40800c; }
+.insight-aviso       { background: rgba(255,46,99,0.07); border-left: 3px solid #FF2E63; }
+
+.insight-icone { font-size: 1.2rem; flex-shrink: 0; }
+.insight-texto { color: var(--text); }
+
+/* ── EFICIÊNCIA ────────────────────────────────────────────── */
+.hora-dist-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 0;
+}
+
+.hora-bar-item { display: flex; flex-direction: column; gap: 4px; }
+
+.hora-bar-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.82rem;
+    color: var(--text);
+}
+
+.hora-bar-track {
+    width: 100%;
+    height: 10px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.hora-bar-fill {
+    height: 100%;
+    border-radius: 5px;
+    transition: width 0.5s ease;
+}
+
+.efic-grupos-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+}
+
+@media (max-width: 900px) {
+    .efic-grupos-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.efic-grupo-card {
+    padding: 14px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.07);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.efic-grupo-title { font-weight: 700; font-size: 0.85rem; color: var(--text); }
+.efic-grupo-equips { font-size: 0.75rem; color: var(--text-secondary); }
+
+.efic-mini-bars {
+    display: flex;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    gap: 1px;
+}
+
+.efic-grupo-pct {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #40800c;
+}
+
+.correlacoes-list { display: flex; flex-direction: column; gap: 10px; }
+
+.correlacao-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 0.87rem;
+    color: var(--text);
+}
+
+.correlacao-insight { background: rgba(0,212,255,0.06); }
+.correlacao-dado    { background: rgba(255,255,255,0.04); }
+
+/* ── AUDIT NOTE ────────────────────────────────────────────── */
+.audit-note {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 8px;
+    padding: 10px 14px;
+    line-height: 1.5;
+}
+
+.audit-note i { margin-right: 6px; }
+
+/* ── EMPTY STATE ───────────────────────────────────────────── */
+.empty-state {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 30px;
+    font-size: 0.9rem;
+}
+
+/* ── LIGHT THEME OVERRIDES ─────────────────────────────────── */
+[data-theme="light"] .oee-triple-card,
+[data-theme="light"] .tmd-card,
+[data-theme="light"] .efic-grupo-card {
+    background: #fff;
+    border-color: #e0e0e0;
+}
+
+[data-theme="light"] .oee-modelo-badge {
+    background: rgba(0,0,0,0.04);
+    border-color: rgba(0,0,0,0.12);
+    color: #555;
+}
+
+[data-theme="light"] .hora-bar-track {
+    background: rgba(0,0,0,0.1);
+}
+
+[data-theme="light"] .audit-note {
+    background: rgba(0,0,0,0.03);
+    border-color: rgba(0,0,0,0.1);
+}
+
+[data-theme="light"] .insight-item,
+[data-theme="light"] .correlacao-item {
+    color: #222;
+}
+
+[data-theme="light"] .oee-table th {
+    color: #444;
+}
+
+/* ── RESPONSIVE ────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .oee-header-bar { flex-direction: column; align-items: flex-start; }
+    .oee-triple-grid { grid-template-columns: 1fr 1fr 1fr; }
+    .tmd-val { font-size: 1.1rem; }
+    .ganho-destaque { flex-direction: column; gap: 10px; }
+    .ganho-valor { font-size: 1.5rem; }
+}

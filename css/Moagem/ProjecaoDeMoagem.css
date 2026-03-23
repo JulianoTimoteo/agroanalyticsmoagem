@@ -1,0 +1,123 @@
+/* ============================================================
+   css/Moagem/ProjecaoDeMoagem.css
+   Estiliza o card de Projeção de Moagem 24h:
+   valor principal, badge de status e barra de progresso
+   ============================================================ */
+
+.projecao-section {
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 12px;
+    padding: 22px 20px;
+}
+
+.projecao-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.projecao-header-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: rgba(64, 128, 12, 0.15);
+    color: #40800c;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.projecao-title {
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text, #F0F0F0);
+    margin: 0;
+}
+
+.projecao-subtitle {
+    font-size: 0.68rem;
+    color: var(--text-secondary, #D8D8D8);
+    margin: 2px 0 0;
+}
+
+/* Valor principal da projeção */
+.projecao-valor {
+    font-size: 2.4rem;
+    font-weight: 800;
+    line-height: 1;
+    transition: color 0.4s ease;
+    letter-spacing: -0.5px;
+}
+
+/* Badge de status (Bater a meta / Abaixo da meta) */
+.forecast-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    border: 1px solid currentColor;
+    font-size: 0.78rem;
+    font-weight: 700;
+    margin-top: 10px;
+    transition: all 0.3s ease;
+}
+
+.forecast-badge.active {
+    background: rgba(64, 128, 12, 0.1);
+    color: #40800c;
+    border-color: #40800c;
+}
+
+.forecast-badge.danger {
+    background: rgba(255, 46, 99, 0.1);
+    color: #FF2E63;
+    border-color: #FF2E63;
+}
+
+/* Diferença vs. meta */
+.forecast-diff {
+    font-size: 0.83rem;
+    font-weight: 700;
+    margin-top: 6px;
+    transition: color 0.3s ease;
+}
+
+/* Barra de progresso */
+.projecao-progress-container {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.07);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-top: 14px;
+}
+
+#projecaoProgress {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.8s ease, background 0.4s ease;
+    min-width: 4px;
+}
+
+/* Meta label abaixo da barra */
+.projecao-meta-label {
+    font-size: 0.7rem;
+    color: var(--text-secondary, #D8D8D8);
+    margin-top: 6px;
+    text-align: right;
+}
+
+/* ── Mobile ─────────────────────────────────── */
+@media (max-width: 768px) {
+    .projecao-valor { font-size: 1.8rem; }
+    .projecao-section { padding: 16px 14px; }
+}
