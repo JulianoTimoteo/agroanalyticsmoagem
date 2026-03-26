@@ -1,370 +1,261 @@
-// ============================================================
-// OEE_tpl_renderer.js — Renderizador OEE baseado em dados TPL
-// Estrutura TPL: COD.EQUIPAMENTO, GRUPO EQUIPAMENTO, DESC.GRUPO OPERAC.
-//   HRS OPERACIONAIS, ESTADO, DATA/HORA LOCAL
-//
-// Cores por categoria (REGRA — não alterar):
-//   Produtivas   → #40800c (Verde)
-//   Improdutivas → #FF8C00 (Laranja)
-//   Climático    → #38bdf8 (Azul claro)
-//   Manutenção   → #ef4444 (Vermelho)
-//   Preventiva   → #8b5cf6 (Roxo)
-//   Indeterminado→ #1f2937 (Preto/escuro)
-// ============================================================
+// OEE_tpl_renderer.js — v5.0 AgroAnalytics
+// UI consistente com o padrão do sistema (sp-hero-section, glass-table, panel sp-panel)
 
-const OEE_TPL_COLORS = {
-    'Produtivas':    { bg: '#40800c', fill: 'rgba(64,128,12,0.7)',   label: 'Produtivas'    },
-    'Improdutivas':  { bg: '#FF8C00', fill: 'rgba(255,140,0,0.7)',   label: 'Improdutivas'  },
-    'Climático':     { bg: '#38bdf8', fill: 'rgba(56,189,248,0.7)',  label: 'Climático'     },
-    'Manutenção':    { bg: '#ef4444', fill: 'rgba(239,68,68,0.7)',   label: 'Manutenção'    },
-    'Preventiva':    { bg: '#8b5cf6', fill: 'rgba(139,92,246,0.7)',  label: 'Preventiva'    },
-    'Indeterminado': { bg: '#374151', fill: 'rgba(55,65,81,0.7)',    label: 'Indeterminado' },
-};
+(function () {
+    'use strict';
 
-const OEE_CATEGORY_ORDER = ['Produtivas','Manutenção','Preventiva','Climático','Improdutivas','Indeterminado'];
+    var ST = { tplData:null, analysis:null, filtroMode:'safra', inicio:null, fim:null };
+    var COR = { PRODUTIVO:'#40800C', IMPRODUTIVO:'#F39C12', MANUTENCAO:'#E74C3C', CLIMATICO:'#3498DB', PREVENTIVO:'#8E44AD', INDETERMINADO:'#64748b' };
+    var LBL = { PRODUTIVO:'Produtivas', IMPRODUTIVO:'Improdutivas', MANUTENCAO:'Manutenção', CLIMATICO:'Climáticas', PREVENTIVO:'Preventiva', INDETERMINADO:'Indeterminado' };
+    var ORDER = ['PRODUTIVO','MANUTENCAO','PREVENTIVO','CLIMATICO','IMPRODUTIVO','INDETERMINADO'];
+    var GCFG = {
+        colh_propria  : { label:'Colhedoras Próprias',  color:'#40800C', icon:'fa-tractor'   },
+        colh_terceira : { label:'Colhedoras Terceiras', color:'#E74C3C', icon:'fa-handshake' },
+        cam_proprio   : { label:'Caminhões Próprios',   color:'#3498DB', icon:'fa-truck'     },
+        cam_terceiro  : { label:'Caminhões Terceiros',  color:'#8E44AD', icon:'fa-truck'     },
+        transbordo    : { label:'Transbordos',          color:'#F39C12', icon:'fa-tractor'   },
+    };
 
-// ── Parse HH:MM:SS to seconds ────────────────────────────────
-function _parseHrs(s) {
-    if (!s || typeof s !== 'string') return 0;
-    const p = s.split(':');
-    if (p.length < 2) return 0;
-    return (parseInt(p[0])||0)*3600 + (parseInt(p[1])||0)*60 + (parseInt(p[2])||0);
-}
+    function fmtH(v) { if (!v&&v!==0) return '—'; var h=Math.floor(v),m=Math.round((v-h)*60); return h+'h'+(m>0?String(m).padStart(2,'0')+'m':''); }
+    function fmtP(v,d) { if (v==null||isNaN(v)) return '—'; return (v*100).toFixed(d==null?1:d)+'%'; }
+    function oeeC(v) { return v==null?'#64748b':v>=0.65?'#40800C':v>=0.45?'#F39C12':'#E74C3C'; }
+    function oeeL(v) { return v==null?'—':v>=0.65?'🏆 Excelente':v>=0.45?'⚠️ Regular':'🚨 Crítico'; }
+    function dispC(v) { return v==null?'#64748b':v>=0.85?'#40800C':v>=0.70?'#F39C12':'#E74C3C'; }
 
-// ── Normalize category name ──────────────────────────────────
-function _normCat(raw) {
-    if (!raw) return 'Indeterminado';
-    const r = raw.trim().toLowerCase();
-    if (r.includes('prod') && !r.includes('improd')) return 'Produtivas';
-    if (r.includes('improd')) return 'Improdutivas';
-    if (r.includes('lim') || r.includes('clima')) return 'Climático';
-    if (r.includes('anu') || r.includes('mecân') || r.includes('mecan')) return 'Manutenção';
-    if (r.includes('prev') || r.includes('event')) return 'Preventiva';
-    return 'Indeterminado';
-}
-
-// ── Build summary per equipment from tplData ─────────────────
-function buildOEESummary(tplData, prefixes) {
-    if (!Array.isArray(tplData) || !tplData.length) return [];
-
-    const byEquip = new Map();
-
-    tplData.forEach(row => {
-        const eq = String(row['Equip'] || row['COD. EQUIPAMENTO'] || row['cod_equipamento'] || '').trim();
-        if (!eq) return;
-        if (prefixes && !prefixes.some(p => eq.startsWith(p))) return;
-
-        const cat = _normCat(row['DESC.GRUPO OPERAC.'] || row['desc_grupo_operac'] || row['grupo_operac'] || '');
-        const hrs = _parseHrs(row['HRS OPERACIONAIS'] || row['hrs_operacionais'] || '0') / 3600;
-        const frente = String(row['GRUPO EQUIPAMENTO'] || row['grupo_equipamento'] || '').trim();
-        const data   = String(row['DATA/HORA LOCAL'] || row['data_hora_local'] || '').trim();
-
-        if (!byEquip.has(eq)) {
-            byEquip.set(eq, {
-                eq, frente,
-                cats: { Produtivas:0, Improdutivas:0, 'Manutenção':0, 'Preventiva':0, 'Climático':0, Indeterminado:0 },
-                total: 0, datas: new Set()
-            });
-        }
-        const d = byEquip.get(eq);
-        d.cats[cat] = (d.cats[cat] || 0) + hrs;
-        d.total += hrs;
-        if (data) d.datas.add(data.substring(0,10));
-    });
-
-    return Array.from(byEquip.values()).map(d => {
-        const avail  = d.total - (d.cats['Manutenção']||0) - (d.cats['Preventiva']||0);
-        const active = avail - (d.cats['Climático']||0);
-        const disp   = d.total > 0 ? (avail / d.total) * 100 : 0;
-        const aprov  = active > 0  ? ((d.cats['Produtivas']||0) / active) * 100 : 0;
-        const qual   = 100; // qualidade assumida 100% (sem dados de refugo)
-        const oee    = (disp / 100) * (aprov / 100) * (qual / 100) * 100;
-        return { ...d, disp, aprov, qual, oee, dias: d.datas.size || 1 };
-    }).sort((a, b) => b.oee - a.oee);
-}
-
-// ── Render OEE tab content ───────────────────────────────────
-function renderOEETab(containerId, tplData, prefixes, titulo) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-
-    const summary = buildOEESummary(tplData, prefixes);
-
-    if (!summary.length) {
-        container.innerHTML = `
-            <div style="padding:60px 20px;text-align:center;">
-                <i class="fas fa-database" style="font-size:3rem;color:var(--primary);opacity:0.3;"></i>
-                <p style="margin-top:16px;color:var(--text);font-size:0.9rem;">
-                    Nenhum dado TPL disponível para ${titulo}.<br>
-                    Execute <code>migrarTPLSafra()</code> no GAS para popular os dados.
-                </p>
-            </div>`;
-        return;
+    function barPct(v,color,w) {
+        var p=Math.min(Math.round((v||0)*100),100),bw=w||90;
+        return '<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;max-width:'+bw+'px;height:6px;background:rgba(255,255,255,.1);border-radius:3px"><div style="width:'+p+'%;height:6px;background:'+color+';border-radius:3px"></div></div><span style="color:'+color+';font-weight:800;min-width:36px;text-align:right;font-size:12px">'+fmtP(v,0)+'</span></div>';
     }
 
-    // Global averages
-    const gDisp  = summary.reduce((s,d) => s+d.disp,  0) / summary.length;
-    const gAprov = summary.reduce((s,d) => s+d.aprov, 0) / summary.length;
-    const gOEE   = summary.reduce((s,d) => s+d.oee,   0) / summary.length;
+    function donutSVG(tempos,sz) {
+        sz=sz||80; var tot=0;
+        ORDER.forEach(function(k){tot+=(tempos[k.toLowerCase()]||tempos[k]||0);});
+        if (!tot) return '<div style="width:'+sz+'px;height:'+sz+'px"></div>';
+        var cx=sz/2,cy=sz/2,rv=sz/2-7,stroke=10,circ=2*Math.PI*rv,offset=-circ*0.25,paths='';
+        ORDER.forEach(function(k){ var v=(tempos[k.toLowerCase()]||tempos[k]||0); if(!v)return;
+            var dash=(v/tot)*circ,gap=circ-dash;
+            paths+='<circle cx="'+cx+'" cy="'+cy+'" r="'+rv+'" fill="none" stroke="'+COR[k]+'" stroke-width="'+stroke+'" stroke-dasharray="'+dash.toFixed(2)+' '+gap.toFixed(2)+'" stroke-dashoffset="'+offset.toFixed(2)+'"/>';
+            offset-=dash;
+        });
+        var pp=Math.round((tempos.produtivo||tempos.PRODUTIVO||0)/tot*100);
+        return '<svg width="'+sz+'" height="'+sz+'" viewBox="0 0 '+sz+' '+sz+'"><circle cx="'+cx+'" cy="'+cy+'" r="'+rv+'" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="'+stroke+'"/>'+paths+'<text x="'+cx+'" y="'+(cy-4)+'" text-anchor="middle" class="donut-pct-text" font-size="'+(sz>60?13:10)+'" font-weight="800">'+pp+'%</text><text x="'+cx+'" y="'+(cy+10)+'" text-anchor="middle" class="donut-sub-text" font-size="8">prod.</text></svg>';
+    }
 
-    const fmt1 = n => isNaN(n)||!n ? '—' : n.toFixed(1)+'%';
+    function _filtroBar(r) {
+        var p=r.meta.periodo;
+        var di=p.inicio?p.inicio.split('-').reverse().join('/'):'—';
+        var df=p.fim?p.fim.split('-').reverse().join('/'):'—';
+        var modos=[{id:'safra',l:'Safra Toda'},{id:'mes',l:'Este Mês'},{id:'semana',l:'Esta Semana'},{id:'dia',l:'Hoje'},{id:'custom',l:'Personalizado'}];
+        var btns=modos.map(function(m){ return '<button onclick="window._oeeSetFiltro(\''+m.id+'\')" class="filter-btn'+(ST.filtroMode===m.id?' active':'')+'" style="margin-bottom:4px">'+m.l+'</button>'; }).join('');
+        var custom=ST.filtroMode==='custom'?'<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap"><input type="date" id="oe-di" value="'+(ST.inicio||'')+'" style="padding:5px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(0,0,0,.2);color:inherit;font-size:12px"><span style="opacity:.5">até</span><input type="date" id="oe-df" value="'+(ST.fim||'')+'" style="padding:5px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(0,0,0,.2);color:inherit;font-size:12px"><button onclick="window._oeeAplicarCustom()" class="filter-btn active" style="margin-bottom:0">Aplicar</button></div>':'';
+        return '<div class="panel sp-panel" style="padding:14px 18px;margin-bottom:16px"><div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;opacity:.5"><i class="fa-solid fa-calendar-days" style="margin-right:6px"></i>Filtro de Período</div><div style="font-size:12px;opacity:.7">📅 '+di+' → '+df+' &nbsp;·&nbsp; '+r.meta.nEquipamentos+' equipamentos &nbsp;·&nbsp; '+r.meta.nDias+' dia(s)</div></div><div style="display:flex;gap:6px;flex-wrap:wrap">'+btns+'</div>'+custom+'</div>';
+    }
 
-    const kpiHtml = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-bottom:20px;">
-        ${[
-            {l:'OEE Global',      v:fmt1(gOEE),  c: gOEE>=65?'#40800c':gOEE>=40?'#FF8C00':'#ef4444'},
-            {l:'Disponibilidade', v:fmt1(gDisp), c: gDisp>=85?'#40800c':gDisp>=70?'#FF8C00':'#ef4444'},
-            {l:'Aproveitamento',  v:fmt1(gAprov),c: gAprov>=70?'#40800c':gAprov>=50?'#FF8C00':'#ef4444'},
-            {l:'Equipamentos',    v:summary.length, c:'var(--primary,#00D4FF)'},
-        ].map(k=>`
-        <div style="background:rgba(15,23,42,0.7);border:1px solid rgba(255,255,255,0.08);border-left:4px solid ${k.c};
-                    border-radius:12px;padding:16px;text-align:center;">
-            <div style="font-size:1.6rem;font-weight:900;color:${k.c};">${k.v}</div>
-            <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text);margin-top:4px;">${k.l}</div>
-        </div>`).join('')}
-    </div>`;
+    function _heroCelula(bcolor,icon,label,val,sub,valcolor) {
+        var c=valcolor||bcolor;
+        return '<div class="sp-hero-kpi" style="border-left:4px solid '+bcolor+'"><div class="sp-hero-icon" style="color:'+c+'"><i class="fa-solid '+icon+'"></i></div><div class="sp-hero-body"><div class="sp-hero-val" style="color:'+c+'">'+val+'</div><div class="sp-hero-label">'+label+'</div><div class="sp-hero-sub">'+sub+'</div></div></div>';
+    }
 
-    // Legend
-    const legendHtml = `
-    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
-        ${OEE_CATEGORY_ORDER.map(cat => {
-            const c = OEE_TPL_COLORS[cat];
-            return `<span style="display:flex;align-items:center;gap:6px;font-size:0.75rem;font-weight:700;color:var(--text);">
-                <span style="width:12px;height:12px;border-radius:3px;background:${c.bg};flex-shrink:0;"></span>
-                ${c.label}
-            </span>`;
-        }).join('')}
-    </div>`;
+    function _grupoCardsHTML(r,keys) {
+        var cards=keys.map(function(k){
+            var g=r.grupos[k],cfg=GCFG[k]; if(!g||g.nEquips===0) return '';
+            var tem=g.tempos||{},tot=Object.values(tem).reduce(function(a,b){return a+b;},0)||1;
+            var prod=(tem.PRODUTIVO||0),manu=(tem.MANUTENCAO||0),imp=(tem.IMPRODUTIVO||0),oc=oeeC(g.oee);
+            var w=function(v){return tot>0?Math.max(0,Math.round(v/tot*1000)/10):0;};
+            var barra=ORDER.map(function(ok){var v=tem[ok]||0,p=v/tot*100; return p>0?'<div style="width:'+p.toFixed(1)+'%;background:'+COR[ok]+';height:100%" title="'+LBL[ok]+': '+fmtH(v)+'"></div>':'';}).join('');
+            var top5=(g.ranking||[]).slice(0,5).map(function(e,i){
+                var c2=oeeC(e.oee),med=i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
+                return '<tr><td><span class="rank-num '+(i<3?'rank-top':'')+'" style="font-size:'+(i<3?'16px':'12px')+'">'+(med||i+1)+'</span></td><td><span class="equip-badge" style="font-size:10px">'+e.cod+'</span></td><td style="font-size:11px;opacity:.6">'+(e.frente||'—')+'</td><td style="color:#3498DB;font-size:11px;font-weight:700;text-align:right">'+fmtP(e.disp,0)+'</td><td><div style="display:flex;align-items:center;gap:4px"><div style="width:50px;height:4px;background:rgba(255,255,255,.08);border-radius:2px"><div style="width:'+Math.min((e.oee||0)*100,100)+'%;height:4px;background:'+c2+';border-radius:2px"></div></div><span style="color:'+c2+';font-weight:800;font-size:12px">'+fmtP(e.oee,0)+'</span></div></td></tr>';
+            }).join('');
+            return '<div class="vg-card" style="cursor:default"><div class="vg-card-header"><div class="vg-card-icon" style="background:'+cfg.color+'22;border:1px solid '+cfg.color+'44"><i class="fa-solid '+cfg.icon+'" style="color:'+cfg.color+'"></i></div><div class="vg-card-title-group"><div class="vg-card-name">'+cfg.label+'</div><div class="vg-card-meta">'+g.nEquips+' equip. · '+fmtH(tot)+' totais</div></div><span class="vg-card-ef" style="background:rgba(0,0,0,.15);color:'+oc+'">'+fmtP(g.oee,0)+'</span></div><div class="vg-card-body"><div class="vg-card-donut">'+donutSVG(Object.assign({total:tot},tem),84)+'</div><div class="vg-card-stats"><div class="vg-stat-row"><span class="vg-stat-dot" style="background:#40800C"></span><span class="vg-stat-label">Produtivas</span><span class="vg-stat-val" style="color:#40800C">'+fmtH(prod)+'</span><span class="vg-stat-pct">'+w(prod).toFixed(0)+'%</span></div><div class="vg-stat-row"><span class="vg-stat-dot" style="background:#E74C3C"></span><span class="vg-stat-label">Manutenção</span><span class="vg-stat-val" style="color:#E74C3C">'+fmtH(manu)+'</span><span class="vg-stat-pct">'+w(manu).toFixed(0)+'%</span></div><div class="vg-stat-row"><span class="vg-stat-dot" style="background:#F39C12"></span><span class="vg-stat-label">Improdutivas</span><span class="vg-stat-val" style="color:#F39C12">'+fmtH(imp)+'</span><span class="vg-stat-pct">'+w(imp).toFixed(0)+'%</span></div></div></div><div class="vg-card-bar">'+barra+'</div>'+(top5?'<div style="padding:0 16px 14px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;opacity:.4;margin-bottom:6px">Top Equipamentos por OEE</div><table style="width:100%;border-collapse:collapse"><thead><tr><th style="font-size:9px;opacity:.4;padding:2px 4px">#</th><th style="font-size:9px;opacity:.4;padding:2px 4px;text-align:left">Equip.</th><th style="font-size:9px;opacity:.4;padding:2px 4px;text-align:left">Frente</th><th style="font-size:9px;opacity:.4;padding:2px 4px;text-align:right">Disp.</th><th style="font-size:9px;opacity:.4;padding:2px 4px;text-align:left">OEE</th></tr></thead><tbody>'+top5+'</tbody></table></div>':'')+'</div>';
+        }).filter(Boolean).join('');
+        if (!cards) return '';
+        return '<div class="panel sp-panel"><div class="panel-header"><h3><i class="fa-solid fa-layer-group" style="color:#40800C;margin-right:8px"></i>Resultado por Grupo</h3><p class="panel-subtitle">Clique na aba Comparativo para ver próprias vs terceiras</p></div><div style="padding:0 18px 18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px">'+cards+'</div></div>';
+    }
 
-    // Equipment rows
-    const rowsHtml = summary.map(d => {
-        const totalSec = d.total * 3600;
-        const bars = OEE_CATEGORY_ORDER.map(cat => {
-            const hrs = d.cats[cat] || 0;
-            const pct = d.total > 0 ? (hrs / d.total) * 100 : 0;
-            if (pct < 0.5) return '';
-            const c = OEE_TPL_COLORS[cat];
-            return `<div title="${cat}: ${hrs.toFixed(1)}h (${pct.toFixed(1)}%)"
-                        style="width:${pct}%;background:${c.bg};height:100%;
-                               transition:width .5s;cursor:help;"></div>`;
+    function _frentesHTML(r,titulo) {
+        var frentes=r.frentes||[]; if(!frentes.length) return '';
+        var rows=frentes.map(function(f){
+            var tot=f.tempoTotal||1,tem=f.tempos||{};
+            var prod=(tem.PRODUTIVO||0),manu=(tem.MANUTENCAO||0),imp=(tem.IMPRODUTIVO||0),dc=dispC(f.disp);
+            var barra=ORDER.map(function(k){var v=tem[k]||0,p=v/tot*100; return p>0?'<div style="width:'+p.toFixed(1)+'%;background:'+COR[k]+';height:100%"></div>':'';}).join('');
+            return '<tr><td style="font-weight:700;font-size:13px;color:#40800C">'+f.frente+'</td><td class="text-center" style="font-size:12px">'+f.nEquips+'</td><td style="color:#40800C;font-weight:700">'+fmtH(prod)+'</td><td style="color:#E74C3C">'+fmtH(manu)+'</td><td style="color:#F39C12">'+fmtH(imp)+'</td><td><div style="display:flex;align-items:center;gap:4px"><div style="width:60px;height:4px;background:rgba(255,255,255,.08);border-radius:2px"><div style="width:'+Math.min((f.disp||0)*100,100)+'%;height:4px;background:'+dc+';border-radius:2px"></div></div><span style="color:'+dc+';font-weight:800;font-size:12px">'+fmtP(f.disp,0)+'</span></div></td><td style="min-width:70px"><div style="display:flex;height:5px;border-radius:3px;overflow:hidden">'+barra+'</div></td><td style="font-size:11px;color:#F39C12;max-width:140px">'+(f.gargalo?f.gargalo.desc:'—')+'</td></tr>';
         }).join('');
-
-        const oeeColor = d.oee>=65?'#40800c':d.oee>=40?'#FF8C00':'#ef4444';
-        const dispColor = d.disp>=85?'#40800c':d.disp>=70?'#FF8C00':'#ef4444';
-
-        return `
-        <div style="background:rgba(10,16,30,0.65);border:1px solid rgba(255,255,255,0.07);
-                    border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-                <div style="display:flex;align-items:center;gap:12px;">
-                    <span style="font-size:1rem;font-weight:900;color:var(--text);">${d.eq}</span>
-                    ${d.frente ? `<span style="font-size:0.72rem;color:var(--text);opacity:0.6;background:rgba(255,255,255,0.06);
-                                       padding:2px 8px;border-radius:10px;">${d.frente}</span>` : ''}
-                </div>
-                <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                    <span style="font-size:0.72rem;font-weight:800;color:${oeeColor};">OEE: ${fmt1(d.oee)}</span>
-                    <span style="font-size:0.72rem;font-weight:800;color:${dispColor};">Disp: ${fmt1(d.disp)}</span>
-                    <span style="font-size:0.72rem;color:var(--text);">Total: ${d.total.toFixed(0)}h</span>
-                </div>
-            </div>
-            <!-- Stacked bar -->
-            <div style="height:20px;border-radius:6px;overflow:hidden;display:flex;background:rgba(255,255,255,0.04);">
-                ${bars}
-            </div>
-            <!-- Hours breakdown -->
-            <div style="display:flex;flex-wrap:wrap;gap:6px;">
-                ${OEE_CATEGORY_ORDER.filter(c=>d.cats[c]>0).map(cat=>{
-                    const h = d.cats[cat];
-                    const pct = d.total>0?(h/d.total*100):0;
-                    return `<span style="font-size:0.68rem;padding:2px 7px;border-radius:8px;
-                                background:${OEE_TPL_COLORS[cat].fill};color:#fff;font-weight:700;">
-                        ${OEE_TPL_COLORS[cat].label}: ${h.toFixed(1)}h (${pct.toFixed(0)}%)
-                    </span>`;
-                }).join('')}
-            </div>
-        </div>`;
-    }).join('');
-
-    container.innerHTML = `
-    <style>
-    [data-theme="light"] .oee-equip-row { background: rgba(255,255,255,0.85) !important; border-color: rgba(0,0,0,0.08) !important; }
-    </style>
-    <div style="display:flex;flex-direction:column;gap:0;padding:4px 0;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
-            <h3 style="margin:0;font-size:1.1rem;font-weight:800;color:var(--text);display:flex;align-items:center;gap:10px;">
-                <span style="width:32px;height:32px;border-radius:8px;background:rgba(99,102,241,0.15);color:#6366f1;
-                             display:inline-flex;align-items:center;justify-content:center;font-size:0.9rem;">
-                    <i class="fas fa-chart-bar"></i>
-                </span>
-                ${titulo}
-            </h3>
-            <span style="font-size:0.72rem;color:var(--text);opacity:0.5;">${summary.length} equipamentos analisados</span>
-        </div>
-        ${kpiHtml}
-        ${legendHtml}
-        <div style="display:flex;flex-direction:column;gap:10px;">
-            ${rowsHtml}
-        </div>
-    </div>`;
-}
-
-// ── Render Gargalos tab ──────────────────────────────────────
-function renderGargalosTab(tplData) {
-    const container = document.getElementById('tab-gargalos');
-    if (!container) return;
-
-    const all = buildOEESummary(tplData, null);
-    if (!all.length) {
-        container.innerHTML = `<div style="padding:60px 20px;text-align:center;color:var(--text);">
-            <i class="fas fa-exclamation-triangle" style="font-size:3rem;opacity:0.3;"></i>
-            <p style="margin-top:16px;">Sem dados TPL para análise de gargalos.</p></div>`;
-        return;
+        return '<div class="panel sp-panel"><div class="panel-header"><h3><i class="fa-solid fa-map-marked-alt" style="color:#3498DB;margin-right:8px"></i>'+(titulo||'Frentes de Trabalho')+'</h3></div><div class="table-container"><table class="glass-table" style="min-width:600px"><thead><tr><th>Frente</th><th class="text-center">Equip.</th><th style="color:#40800C">Trabalhando</th><th style="color:#E74C3C">Manutenção</th><th style="color:#F39C12">Parada Op.</th><th>Disponib.</th><th style="min-width:70px">Distribuição</th><th>Maior Parada</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
     }
 
-    // Top gargalos: equipamentos com maior % de tempo improdutivo ou manutenção
-    const gargalos = all
-        .filter(d => d.total > 0)
-        .map(d => ({
-            ...d,
-            pctImprod: d.total>0 ? (d.cats['Improdutivas']||0)/d.total*100 : 0,
-            pctManut : d.total>0 ? ((d.cats['Manutenção']||0)+(d.cats['Preventiva']||0))/d.total*100 : 0,
-            pctClim  : d.total>0 ? (d.cats['Climático']||0)/d.total*100 : 0,
-        }))
-        .sort((a,b) => (b.pctManut + b.pctImprod) - (a.pctManut + a.pctImprod));
-
-    const gRows = gargalos.slice(0,15).map((d,i) => {
-        const isAlert = d.pctManut > 10 || d.oee < 30;
-        const icon = d.pctManut > 10 ? '🔴' : d.pctImprod > 70 ? '🟠' : '🟡';
-        return `
-        <div style="display:grid;grid-template-columns:24px 1fr auto auto auto;gap:12px;align-items:center;
-                    padding:10px 14px;background:rgba(10,16,30,0.6);border-radius:8px;
-                    border-left:3px solid ${isAlert?'#ef4444':'#FF8C00'};">
-            <span style="font-size:0.85rem;">${icon}</span>
-            <div>
-                <span style="font-weight:800;color:var(--text);">${d.eq}</span>
-                ${d.frente?`<span style="margin-left:8px;font-size:0.7rem;color:var(--text);opacity:0.5;">${d.frente}</span>`:''}
-            </div>
-            <span style="font-size:0.72rem;color:#ef4444;font-weight:700;white-space:nowrap;">
-                ${d.pctManut>0?`Manut: ${d.pctManut.toFixed(1)}%`:''}
-            </span>
-            <span style="font-size:0.72rem;color:#FF8C00;font-weight:700;white-space:nowrap;">
-                Improd: ${d.pctImprod.toFixed(1)}%
-            </span>
-            <span style="font-size:0.72rem;color:${d.oee>=40?'#40800c':'#ef4444'};font-weight:800;white-space:nowrap;">
-                OEE: ${d.oee.toFixed(1)}%
-            </span>
-        </div>`;
-    }).join('');
-
-    container.querySelector('.oee-tab-wrapper').innerHTML = `
-    <div style="padding:4px 0;">
-        <h3 style="margin:0 0 16px;font-size:1.1rem;font-weight:800;color:var(--text);">
-            <i class="fas fa-exclamation-triangle" style="color:var(--warning);margin-right:8px;"></i>
-            Gargalos Operacionais — Análise de Perdas
-        </h3>
-        <div style="display:flex;flex-direction:column;gap:8px;">${gRows}</div>
-    </div>`;
-}
-
-// ── Render Comparativo OEE ────────────────────────────────────
-function renderComparativoOEE(tplData) {
-    const container = document.getElementById('tab-comparativo-oee');
-    if (!container) return;
-
-    const proprias  = buildOEESummary(tplData, ['80','81','82']);
-    const terceiras = buildOEESummary(tplData, ['92','93','94','95']);
-
-    if (!proprias.length && !terceiras.length) {
-        container.querySelector('.oee-tab-wrapper').innerHTML =
-            `<div style="padding:60px 20px;text-align:center;color:var(--text);">Sem dados TPL.</div>`;
-        return;
+    function _indicadoresHTML(r) {
+        var ind=r.indicadores; if(!ind) return '';
+        var defs=[
+            {k:'semApontamento',e:'❓',t:'Sem Registro de Atividade',alerta:false},
+            {k:'lavagemLubrificacao',e:'🛢',t:'Lavagem / Lubrificação',alerta:false},
+            {k:'catandoCana',e:'🌿',t:'Catando Cana (Transbordo)',alerta:false},
+            {k:'aguardandoColhedora',e:'⏳',t:'Aguardando Colhedora',alerta:true},
+            {k:'engateDesengate',e:'🔗',t:'Engate / Desengate de Reboque',alerta:false},
+            {k:'filaTransbordo',e:'🚦',t:'Fila de Transbordo',alerta:true},
+            {k:'batendoPneus',e:'🔴',t:'Batendo Pneus',alerta:true},
+            {k:'aguardManobraTransbordo',e:'↩',t:'Aguardando Manobra Transbordo',alerta:false},
+            {k:'aguardandoTransbordo',e:'⌛',t:'Aguardando Transbordo',alerta:true},
+            {k:'caminhaoCarregando',e:'🚛',t:'Caminhão Carregando',alerta:false},
+            {k:'manutencaoMecanica',e:'🔧',t:'Manutenção Mecânica (3027)',alerta:false},
+        ].filter(function(d){return ind[d.k]&&ind[d.k].hrsTotal>0;});
+        if (!defs.length) return '';
+        var rows=defs.map(function(d){
+            var item=ind[d.k],temAlerta=(d.alerta&&item.anomalias&&Object.values(item.anomalias).some(Boolean))||(item.alertas&&item.alertas.length>0);
+            return '<tr style="'+(temAlerta?'background:rgba(231,76,60,0.04)':'')+'"><td style="font-size:16px">'+d.e+'</td><td style="font-size:12px;font-weight:600">'+d.t+'</td><td style="font-weight:800;color:#F39C12">'+fmtH(item.hrsTotal)+'</td><td style="font-size:11px;opacity:.6">'+(item.nEquips?item.nEquips+' equip.':'')+'</td><td style="font-size:11px">'+(item.maiorFrente?'Maior: <b>'+item.maiorFrente.frente+'</b> ('+fmtH(item.maiorFrente.hrs)+')':'')+'</td><td>'+(temAlerta?'<span class="status-pill pill-red" style="font-size:9px">ALERTA</span>':'')+'</td></tr>';
+        }).join('');
+        return '<div class="panel sp-panel"><div class="panel-header"><h3><i class="fa-solid fa-flag" style="color:#F39C12;margin-right:8px"></i>Indicadores Operacionais Críticos</h3><p class="panel-subtitle">11 indicadores de gargalo com alerta automático</p></div><div class="table-container"><table class="glass-table"><thead><tr><th></th><th>Indicador</th><th class="text-right">Horas</th><th>Equip.</th><th>Detalhe</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
     }
 
-    const avg = arr => arr.length ? arr.reduce((s,d)=>s+d.oee,0)/arr.length : 0;
-    const avgDisp = arr => arr.length ? arr.reduce((s,d)=>s+d.disp,0)/arr.length : 0;
+    function renderAbaOEE(r,containerId) {
+        var el=document.getElementById(containerId); if(!el) return;
+        if (!r||r.meta.nEquipamentos===0) { el.innerHTML='<div style="padding:60px;text-align:center;opacity:.4"><i class="fa-solid fa-chart-bar" style="font-size:40px;display:block;margin-bottom:12px"></i>Dados TPL não carregados.</div>'; return; }
+        var o=r.oee,m=r.meta,t=r.tempos,oc=oeeC(o.oee),tot=t.total||1;
+        var hero='<div class="sp-hero-section" style="flex-wrap:nowrap;overflow-x:auto;gap:8px">'+
+            '<div class="sp-hero-kpi" style="border-left:4px solid '+oc+';flex:1.5;min-width:160px" title="OEE = Disponibilidade x Performance x Qualidade"><div class="sp-hero-icon" style="color:'+oc+';font-size:28px"><i class="fa-solid fa-gauge-high"></i></div><div class="sp-hero-body"><div class="sp-hero-val" style="font-size:48px;color:'+oc+'">'+fmtP(o.oee,1)+'</div><div class="sp-hero-label">OEE Global da Frota</div><div class="sp-hero-sub" style="color:'+oc+'">'+oeeL(o.oee)+'</div></div></div>'+
+            _heroCelula(dispC(o.disponibilidade),'fa-check-circle','Disponibilidade',fmtP(o.disponibilidade),fmtH(t.produtivo)+' prod. de '+fmtH(tot)+' totais','#40800C')+
+            _heroCelula('#F39C12','fa-bolt','Performance',fmtP(o.performance),'CBA: '+fmtH(m.hrsCBATotal)+' / Motor: '+fmtH(m.hrsMotorTotal),'#F39C12')+
+            _heroCelula('#3498DB','fa-star','Qualidade <small class="status-pill pill-orange" style="font-size:9px;vertical-align:middle">PROXY</small>',fmtP(o.qualidade),'Impl.: '+fmtH(m.hrsImplTotal),'#3498DB')+
+            (m.aderenciaRTK!=null?_heroCelula('#3498DB','fa-satellite','Piloto Automático (RTK)',fmtP(m.aderenciaRTK),'Aderência RTK','#3498DB'):'')+
+            '</div>';
+        var barRows=ORDER.map(function(k){ var v=t[k.toLowerCase()]||t[k]||0; if(!v) return ''; var p=v/tot*100;
+            return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04)"><div style="width:11px;height:11px;border-radius:3px;background:'+COR[k]+';flex-shrink:0"></div><div style="flex:1;font-size:12px">'+LBL[k]+'</div><div style="font-size:12px;font-weight:700;color:'+COR[k]+'">'+fmtH(v)+'</div><div style="min-width:100px"><div style="display:flex;align-items:center;gap:4px"><div style="flex:1;height:4px;background:rgba(255,255,255,.07);border-radius:2px"><div style="width:'+Math.round(p)+'%;height:4px;background:'+COR[k]+';border-radius:2px"></div></div><span style="font-size:11px;opacity:.6;width:30px;text-align:right">'+p.toFixed(0)+'%</span></div></div></div>';
+        }).join('');
+        var temposPanel='<div class="panel sp-panel"><div class="panel-header"><h3><i class="fa-solid fa-clock" style="color:#3498DB;margin-right:8px"></i>Distribuição de Horas — Frota Total</h3><p class="panel-subtitle">Total registrado: '+fmtH(tot)+'</p></div><div style="padding:0 18px 14px">'+barRows+'</div></div>';
+        el.innerHTML='<div style="display:flex;flex-direction:column;gap:16px;padding:4px 0">'+_filtroBar(r)+hero+temposPanel+_grupoCardsHTML(r,['colh_propria','colh_terceira'])+'</div>';
+    }
 
-    const fmt = n => isNaN(n)?'—':n.toFixed(1)+'%';
+    function renderAbaCaminhoes(r) {
+        var el=document.getElementById('tab-oee-caminhoes'); if(!el||!r) return;
+        el.innerHTML='<div style="display:flex;flex-direction:column;gap:16px;padding:4px 0">'+(_grupoCardsHTML(r,['cam_proprio','cam_terceiro','transbordo'])||'<div style="padding:40px;text-align:center;opacity:.4">Nenhum caminhão encontrado nos dados.</div>')+'</div>';
+    }
 
-    container.querySelector('.oee-tab-wrapper').innerHTML = `
-    <div style="padding:4px 0;">
-        <h3 style="margin:0 0 16px;font-size:1.1rem;font-weight:800;color:var(--text);">
-            <i class="fas fa-balance-scale" style="color:var(--primary);margin-right:8px;"></i>
-            Comparativo OEE — Próprias vs Terceiras
-        </h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
-            <div style="background:rgba(64,128,12,0.1);border:1px solid rgba(64,128,12,0.3);
-                        border-radius:12px;padding:20px;text-align:center;">
-                <div style="font-size:0.72rem;font-weight:800;text-transform:uppercase;color:var(--text);margin-bottom:12px;">
-                    <i class="fas fa-tractor" style="color:#40800c;margin-right:6px;"></i> Próprias (80xxx)
-                </div>
-                <div style="font-size:2rem;font-weight:900;color:#40800c;">${fmt(avg(proprias))}</div>
-                <div style="font-size:0.75rem;color:var(--text);margin-top:4px;">OEE Médio</div>
-                <div style="font-size:0.85rem;color:var(--text);margin-top:8px;">Disp: ${fmt(avgDisp(proprias))} · ${proprias.length} equip.</div>
-            </div>
-            <div style="background:rgba(255,140,0,0.1);border:1px solid rgba(255,140,0,0.3);
-                        border-radius:12px;padding:20px;text-align:center;">
-                <div style="font-size:0.72rem;font-weight:800;text-transform:uppercase;color:var(--text);margin-bottom:12px;">
-                    <i class="fas fa-handshake" style="color:#FF8C00;margin-right:6px;"></i> Terceiras (92/93xxx)
-                </div>
-                <div style="font-size:2rem;font-weight:900;color:#FF8C00;">${fmt(avg(terceiras))}</div>
-                <div style="font-size:0.75rem;color:var(--text);margin-top:4px;">OEE Médio</div>
-                <div style="font-size:0.85rem;color:var(--text);margin-top:8px;">Disp: ${fmt(avgDisp(terceiras))} · ${terceiras.length} equip.</div>
-            </div>
-        </div>
-        <canvas id="oeeComparativoChart" style="max-height:280px;"></canvas>
-    </div>`;
+    function renderAbaGargalos(r) {
+        var el=document.getElementById('tab-gargalos'); if(!el) return;
+        if (!r||r.meta.nEquipamentos===0) { el.innerHTML='<div style="padding:60px;text-align:center;opacity:.4"><i class="fa-solid fa-magnifying-glass" style="font-size:40px;display:block;margin-bottom:12px"></i>Sem dados de TPL.</div>'; return; }
+        var t=r.tempos,total=t.total||1,totalParado=(t.manutencao||0)+(t.improdutivo||0)+(t.climatico||0)+(t.preventivo||0)+(t.indeterminado||0);
+        var pp=(totalParado/total*100).toFixed(0),corR=pp>50?'#E74C3C':pp>30?'#F39C12':'#27AE60';
+        var hero='<div class="sp-hero-section">'+
+            _heroCelula(corR,'fa-circle-exclamation','Tempo Não Produtivo',pp+'%',fmtH(totalParado)+' de '+fmtH(total)+' totais',corR)+
+            _heroCelula('#40800C','fa-leaf','Horas Trabalhando',fmtH(t.produtivo||0),((t.produtivo||0)/total*100).toFixed(0)+'% do total','#40800C')+
+            _heroCelula('#E74C3C','fa-wrench','Manutenção Mecânica',fmtH(t.manutencao||0),((t.manutencao||0)/total*100).toFixed(0)+'%','#E74C3C')+
+            _heroCelula('#F39C12','fa-pause','Paradas Operacionais',fmtH(t.improdutivo||0),((t.improdutivo||0)/total*100).toFixed(0)+'%','#F39C12')+
+            ((t.climatico||0)>0?_heroCelula('#3498DB','fa-cloud-rain','Chuva / Clima',fmtH(t.climatico||0),((t.climatico||0)/total*100).toFixed(0)+'%','#3498DB'):'')+
+            '</div>';
+        var todos=(r.gargalos&&r.gargalos.todos)||[];
+        var tabelaGarg='';
+        if (todos.length) {
+            var rows=todos.slice(0,15).map(function(g,i){
+                var cat=g.categoria||'INDETERMINADO',c=COR[cat]||'#64748b',lb=LBL[cat]||cat;
+                return '<tr><td><span class="rank-num '+(i<3?'rank-top':'')+'" style="font-size:'+(i<3?'16px':'12px')+'">'+(i<3?['🥇','🥈','🥉'][i]:i+1)+'</span></td><td><span class="status-pill" style="background:'+c+'22;color:'+c+';font-size:9px">'+lb+'</span></td><td style="font-size:12px;font-weight:600">'+(g.codOperacao?'<span style="opacity:.45;font-size:10px">'+g.codOperacao+' · </span>':'')+(g.descOperacao||g.descOp||'—')+'</td><td><span class="group-tag" style="font-size:9px">'+(g.tipo||'—')+' '+(g.owner||'')+'</span></td><td style="font-size:11px;opacity:.6">'+(g.frente||'—')+'</td><td style="font-weight:800;color:'+c+';text-align:right">'+fmtH(g.hrsTotal)+'</td><td style="text-align:right;opacity:.5;font-size:11px">'+(g.nEquips||0)+' equip.</td></tr>';
+            }).join('');
+            tabelaGarg='<div class="panel sp-panel"><div class="panel-header"><h3><i class="fa-solid fa-ranking-star" style="color:#E74C3C;margin-right:8px"></i>Top 15 — Maiores Causas de Parada</h3><p class="panel-subtitle">Ordenado por horas acumuladas</p></div><div class="table-container"><table class="glass-table"><thead><tr><th style="width:32px">#</th><th>Categoria</th><th>Operação</th><th>Tipo / Frota</th><th>Frente</th><th class="text-right">Horas</th><th class="text-right">Equip.</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+        }
+        el.innerHTML='<div style="display:flex;flex-direction:column;gap:16px;padding:4px 0">'+hero+tabelaGarg+_indicadoresHTML(r)+_frentesHTML(r,'Distribuição por Frente')+'</div>';
+    }
 
-    // Render comparison chart
-    const canvas = document.getElementById('oeeComparativoChart');
-    if (canvas && typeof Chart !== 'undefined') {
-        const existing = Chart.getChart(canvas);
-        if (existing) existing.destroy();
-        const isDark = !document.documentElement.getAttribute('data-theme');
-        const fontColor = isDark ? '#F0F0F0' : '#111';
-        new Chart(canvas.getContext('2d'), {
-            type: 'bar',
-            data: {
-                labels: ['OEE', 'Disponibilidade', 'Aproveitamento'],
-                datasets: [
-                    {
-                        label: 'Próprias',
-                        data: [avg(proprias), avgDisp(proprias), proprias.length?proprias.reduce((s,d)=>s+d.aprov,0)/proprias.length:0],
-                        backgroundColor: 'rgba(64,128,12,0.55)', borderColor: '#40800c', borderWidth: 2, borderRadius: 4
-                    },
-                    {
-                        label: 'Terceiras',
-                        data: [avg(terceiras), avgDisp(terceiras), terceiras.length?terceiras.reduce((s,d)=>s+d.aprov,0)/terceiras.length:0],
-                        backgroundColor: 'rgba(255,140,0,0.55)', borderColor: '#FF8C00', borderWidth: 2, borderRadius: 4
-                    }
-                ]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                scales: {
-                    y: { min:0, max:100, ticks: { callback: v=>v+'%', color:fontColor }, grid: { color: 'rgba(255,255,255,0.06)' } },
-                    x: { ticks: { color: fontColor }, grid: { display: false } }
-                },
-                plugins: {
-                    legend: { labels: { color: fontColor } },
-                    tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${c.parsed.y.toFixed(1)}%` } }
+    function renderAbaEficiencia(r) {
+        var el=document.getElementById('tab-eficiencia-operacional'); if(!el) return;
+        if (!r||r.meta.nEquipamentos===0) { el.innerHTML='<div style="padding:60px;text-align:center;opacity:.4">Sem dados.</div>'; return; }
+        var t=r.tempos,total=t.total||1;
+        var hero='<div class="sp-hero-section">'+
+            _heroCelula(oeeC(r.oee.oee),'fa-gauge-high','OEE da Frota',fmtP(r.oee.oee,1),oeeL(r.oee.oee),oeeC(r.oee.oee))+
+            _heroCelula('#40800C','fa-leaf','Horas Trabalhando',fmtH(t.produtivo||0),((t.produtivo||0)/total*100).toFixed(0)+'% do total','#40800C')+
+            _heroCelula('#E74C3C','fa-wrench','Horas Manutenção',fmtH(t.manutencao||0),((t.manutencao||0)/total*100).toFixed(0)+'%','#E74C3C')+
+            _heroCelula('#F39C12','fa-pause','Paradas Operacionais',fmtH(t.improdutivo||0),((t.improdutivo||0)/total*100).toFixed(0)+'%','#F39C12')+
+            (r.meta.hrsMotorTotal>0?_heroCelula('#3498DB','fa-satellite','Piloto Automático (RTK)',fmtP(r.meta.aderenciaRTK),'Aderência RTK','#3498DB'):'')+
+            '</div>';
+        var todos=[]; Object.values(r.grupos).forEach(function(g){(g.ranking||[]).forEach(function(e){todos.push(e);});});
+        todos.sort(function(a,b){return b.oee-a.oee;});
+        var rankRows=todos.slice(0,25).map(function(e,i){
+            var c=oeeC(e.oee),med=i<3?['🥇','🥈','🥉'][i]:'',topOp=e.topOps&&e.topOps[0]?e.topOps[0].desc:'—';
+            var prod=(e.tempos&&e.tempos.PRODUTIVO)||0,manu=(e.tempos&&e.tempos.MANUTENCAO)||0;
+            return '<tr style="background:'+(i<3?'rgba(64,128,12,0.04)':'')+'"><td><span class="rank-num '+(i<3?'rank-top':'')+'" style="font-size:'+(i<3?'16px':'12px')+'">'+(med||i+1)+'</span></td><td><span class="equip-badge">'+e.cod+'</span></td><td style="font-size:12px;opacity:.65">'+(e.frente||'—')+'</td><td style="color:#40800C;font-weight:700">'+fmtH(prod)+'</td><td style="color:#E74C3C">'+fmtH(manu)+'</td><td>'+barPct(e.disp,dispC(e.disp),70)+'</td><td><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;max-width:70px;height:6px;background:rgba(255,255,255,.1);border-radius:3px"><div style="width:'+Math.min((e.oee||0)*100,100)+'%;height:6px;background:'+c+';border-radius:3px"></div></div><span style="color:'+c+';font-weight:800;font-size:13px">'+fmtP(e.oee,0)+'</span></div></td><td style="color:'+c+';font-size:11px;font-weight:700">'+oeeL(e.oee)+'</td><td style="font-size:11px;opacity:.6;max-width:160px">'+(topOp.length>32?topOp.slice(0,32)+'…':topOp)+'</td></tr>';
+        }).join('');
+        var rankPanel='<div class="panel sp-panel"><div class="panel-header"><h3><i class="fa-solid fa-trophy" style="color:#40800C;margin-right:8px"></i>Ranking de Equipamentos — por OEE</h3><p class="panel-subtitle">Todos os grupos · '+todos.length+' equipamentos</p></div><div class="table-container"><table class="glass-table" style="min-width:640px"><thead><tr><th style="width:32px">#</th><th>Equip.</th><th>Frente</th><th style="color:#40800C">Trabalhando</th><th style="color:#E74C3C">Manutenção</th><th>Disponib.</th><th>OEE</th><th>Nível</th><th>Principal Parada</th></tr></thead><tbody>'+rankRows+'</tbody></table></div></div>';
+        el.innerHTML='<div style="display:flex;flex-direction:column;gap:16px;padding:4px 0">'+hero+rankPanel+_frentesHTML(r,'Eficiência por Frente de Trabalho')+'</div>';
+    }
+
+    function renderAbaComparativo(r) {
+        var el=document.getElementById('tab-comparativo-oee'); if(!el) return;
+        if (!r||r.meta.nEquipamentos===0) { el.innerHTML='<div style="padding:60px;text-align:center;opacity:.4">Sem dados.</div>'; return; }
+        var pares=[
+            {titulo:'Colhedoras',propria:r.grupos.colh_propria,terceiro:r.grupos.colh_terceira,labelP:'🚜 Próprias (80x–85x)',labelT:'🤝 Terceiras (93x–95x)',corP:'#40800C',corT:'#E74C3C'},
+            {titulo:'Caminhões', propria:r.grupos.cam_proprio, terceiro:r.grupos.cam_terceiro, labelP:'🚛 Próprios (31x–32x)',labelT:'🚚 Terceiros (91x)',    corP:'#3498DB',corT:'#8E44AD'},
+        ];
+        var html='';
+        pares.forEach(function(par){
+            var temP=par.propria&&par.propria.nEquips>0,temT=par.terceiro&&par.terceiro.nEquips>0;
+            if(!temP&&!temT) return;
+            var cols=[{g:temP?par.propria:null,label:par.labelP,cor:par.corP},{g:temT?par.terceiro:null,label:par.labelT,cor:par.corT}];
+            var headerCols=cols.map(function(c){return '<th style="text-align:center;color:'+c.cor+';font-size:13px;font-weight:800">'+(c.g?c.label:'<span style="opacity:.3">Sem dados</span>')+'</th>';}).join('');
+            var barrasComp=cols.map(function(c){
+                if(!c.g) return '<td></td>';
+                var tem=c.g.tempos||{},tot=Object.values(tem).reduce(function(a,b){return a+b;},0)||1;
+                var barra=ORDER.map(function(ok){var v=tem[ok]||0,p=v/tot*100; return p>0?'<div style="width:'+p.toFixed(1)+'%;background:'+COR[ok]+';height:100%"></div>':'';}).join('');
+                return '<td style="text-align:center;padding:6px 16px"><div style="display:flex;height:8px;border-radius:4px;overflow:hidden">'+barra+'</div></td>';
+            }).join('');
+            var metrics=[
+                {label:'OEE',fn:function(g){return '<span style="color:'+oeeC(g.oee)+';font-weight:900;font-size:18px">'+fmtP(g.oee,1)+'</span> <span style="color:'+oeeC(g.oee)+';font-size:11px">'+oeeL(g.oee)+'</span>';}},
+                {label:'Disponibilidade',fn:function(g){return barPct(g.disp,dispC(g.disp));}},
+                {label:'Performance',fn:function(g){return barPct(g.perf,'#F39C12');}},
+                {label:'Trabalhando',fn:function(g){return '<span style="color:#40800C;font-weight:700">'+fmtH((g.tempos&&g.tempos.PRODUTIVO)||0)+'</span>';}},
+                {label:'Manutenção',fn:function(g){return '<span style="color:#E74C3C">'+fmtH((g.tempos&&g.tempos.MANUTENCAO)||0)+'</span>';}},
+                {label:'Improdutivas',fn:function(g){return '<span style="color:#F39C12">'+fmtH((g.tempos&&g.tempos.IMPRODUTIVO)||0)+'</span>';}},
+                {label:'Equipamentos',fn:function(g){return g.nEquips+' equip.';}},
+            ];
+            var bodyRows=metrics.map(function(m){
+                var tds=cols.map(function(c){return '<td style="text-align:center;padding:8px 16px">'+(c.g?m.fn(c.g):'<span style="opacity:.3">—</span>')+'</td>';}).join('');
+                return '<tr><td style="font-size:12px;opacity:.6;padding:8px 16px;white-space:nowrap">'+m.label+'</td>'+tds+'</tr>';
+            }).join('');
+            var deltaHTML='';
+            if(temP&&temT){
+                var deltas=[{label:'OEE',dp:par.propria.oee,dt:par.terceiro.oee},{label:'Disponib.',dp:par.propria.disp,dt:par.terceiro.disp},{label:'Performance',dp:par.propria.perf,dt:par.terceiro.perf}].filter(function(d){return d.dp!=null&&d.dt!=null;});
+                if(deltas.length){
+                    deltaHTML='<div style="margin-top:12px;padding:12px 16px;background:rgba(255,255,255,.03);border-radius:8px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;opacity:.4;margin-bottom:8px">Diferença — Próprias vs Terceiras</div><div style="display:flex;gap:10px;flex-wrap:wrap">'+
+                    deltas.map(function(d){var delta=d.dp-d.dt,absPP=(Math.abs(delta)*100).toFixed(0)+'pp',icon=Math.abs(delta)<0.02?'≈':delta>0?'⬆':'⬇',c=Math.abs(delta)<0.02?'#64748b':delta>0?par.corP:par.corT;
+                        return '<div style="flex:1;min-width:90px;background:rgba(255,255,255,.04);border-radius:6px;padding:8px;text-align:center"><div style="font-size:10px;opacity:.5;margin-bottom:2px">'+d.label+'</div><div style="font-size:15px;font-weight:900;color:'+c+'">'+icon+' '+absPP+'</div><div style="font-size:9px;opacity:.5">'+(delta>0?'Próprias melhor':delta<0?'Terceiras melhor':'Equivalente')+'</div></div>';
+                    }).join('')+'</div></div>';
                 }
             }
+            var rankRows2=[];
+            cols.forEach(function(c){if(!c.g)return;(c.g.ranking||[]).slice(0,8).forEach(function(e){rankRows2.push({e:e,cor:c.cor,grupo:c.label});});});
+            rankRows2.sort(function(a,b){return b.e.oee-a.e.oee;});
+            var rankTableRows=rankRows2.slice(0,12).map(function(item,i){
+                var e=item.e,c2=oeeC(e.oee),med=i<3?['🥇','🥈','🥉'][i]:'';
+                return '<tr><td><span class="rank-num '+(i<3?'rank-top':'')+'" style="font-size:'+(i<3?'14px':'11px')+'">'+(med||i+1)+'</span></td><td><span class="equip-badge" style="font-size:10px">'+e.cod+'</span></td><td style="font-size:11px;color:'+item.cor+';font-weight:700">'+item.grupo.replace(/[🚜🤝🚛🚚]\s*/,'').split('(')[0].trim()+'</td><td style="font-size:11px;opacity:.6">'+(e.frente||'—')+'</td><td>'+barPct(e.disp,dispC(e.disp),60)+'</td><td><div style="display:flex;align-items:center;gap:4px"><div style="width:55px;height:4px;background:rgba(255,255,255,.08);border-radius:2px"><div style="width:'+Math.min((e.oee||0)*100,100)+'%;height:4px;background:'+c2+';border-radius:2px"></div></div><span style="color:'+c2+';font-weight:800;font-size:12px">'+fmtP(e.oee,0)+'</span></div></td></tr>';
+            }).join('');
+            html+='<div class="panel sp-panel"><div class="panel-header"><h3><i class="fa-solid fa-balance-scale" style="color:#3498DB;margin-right:8px"></i>'+par.titulo+' — Próprias vs Terceiras</h3><p class="panel-subtitle">Comparativo de desempenho e distribuição de horas no período</p></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:0 18px 18px"><div><table class="glass-table" style="width:100%"><thead><tr><th></th>'+headerCols+'</tr></thead><tbody><tr><td style="padding:4px 16px"></td>'+barrasComp+'</tr>'+bodyRows+'</tbody></table>'+deltaHTML+'</div><div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;opacity:.4;margin:0 0 8px 4px">Ranking Individual</div><table class="glass-table"><thead><tr><th style="width:28px">#</th><th>Equip.</th><th>Grupo</th><th>Frente</th><th>Disp.</th><th>OEE</th></tr></thead><tbody>'+rankTableRows+'</tbody></table></div></div></div>';
         });
+        var trb=r.grupos.transbordo;
+        if(trb&&trb.nEquips>0){
+            var trbRows=(trb.ranking||[]).slice(0,10).map(function(e,i){var c=oeeC(e.oee),med=i<3?['🥇','🥈','🥉'][i]:''; return '<tr><td><span class="rank-num '+(i<3?'rank-top':'')+'" style="font-size:'+(i<3?'16px':'12px')+'">'+(med||i+1)+'</span></td><td><span class="equip-badge">'+e.cod+'</span></td><td style="font-size:11px;opacity:.6">'+(e.frente||'—')+'</td><td>'+barPct(e.disp,dispC(e.disp),70)+'</td><td><div style="display:flex;align-items:center;gap:4px"><div style="width:60px;height:4px;background:rgba(255,255,255,.08);border-radius:2px"><div style="width:'+Math.min((e.oee||0)*100,100)+'%;height:4px;background:'+c+';border-radius:2px"></div></div><span style="color:'+c+';font-weight:800;font-size:12px">'+fmtP(e.oee,0)+'</span></div></td></tr>';}).join('');
+            html+='<div class="panel sp-panel"><div class="panel-header"><h3><i class="fa-solid fa-tractor" style="color:#F39C12;margin-right:8px"></i>Transbordos Terceiros (92x)</h3></div><div class="sp-hero-section" style="padding:12px 18px 0">'+_heroCelula(oeeC(trb.oee),'fa-gauge-high','OEE',fmtP(trb.oee,1),oeeL(trb.oee),oeeC(trb.oee))+_heroCelula(dispC(trb.disp),'fa-check-circle','Disponibilidade',fmtP(trb.disp),'Meta: ≥85%',dispC(trb.disp))+_heroCelula('#F39C12','fa-bolt','Performance',fmtP(trb.perf),'','#F39C12')+_heroCelula('#64748b','fa-cog','Equipamentos',trb.nEquips+' equip.','','#64748b')+'</div><div class="table-container" style="padding:12px 18px 18px"><table class="glass-table"><thead><tr><th style="width:32px">#</th><th>Equip.</th><th>Frente</th><th>Disponib.</th><th>OEE</th></tr></thead><tbody>'+trbRows+'</tbody></table></div></div>';
+        }
+        el.innerHTML='<div style="display:flex;flex-direction:column;gap:16px;padding:4px 0">'+(html||'<div style="padding:40px;text-align:center;opacity:.4">Sem dados para comparativo.</div>')+'</div>';
     }
-}
 
-// ── Public API ───────────────────────────────────────────────
-window.OEE_TPL = {
-    renderColhedoras: (tplData) => {
-        renderOEETab('oee-colhedoras-content', tplData,
-            ['80','81','82','92','93','94','95'],
-            'OEE Colhedoras — Próprias & Terceiras');
-    },
-    renderCaminhoes: (tplData) => {
-        renderOEETab('oee-caminhoes-content', tplData,
-            ['31','32','91'], 'OEE Caminhões — Próprios & Terceiros');
-    },
-    renderComparativo: (tplData) => renderComparativoOEE(tplData),
-    renderGargalos:    (tplData) => renderGargalosTab(tplData),
-    buildSummary: buildOEESummary
-};
+    window._oeeSetFiltro=function(modo){
+        ST.filtroMode=modo;
+        if(modo==='safra'){ST.inicio=null;ST.fim=null;}
+        else if(modo==='mes'){var t=new Date();ST.inicio=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-01';ST.fim=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(new Date(t.getFullYear(),t.getMonth()+1,0).getDate()).padStart(2,'0');}
+        else if(modo==='semana'){var t2=new Date(),dow=t2.getDay()||7,seg=new Date(t2);seg.setDate(t2.getDate()-dow+1);var dom=new Date(seg);dom.setDate(seg.getDate()+6);ST.inicio=seg.toISOString().slice(0,10);ST.fim=dom.toISOString().slice(0,10);}
+        else if(modo==='dia'){ST.inicio=ST.fim=new Date().toISOString().slice(0,10);}
+        _rerender();
+    };
+    window._oeeAplicarCustom=function(){ST.inicio=((document.getElementById('oe-di')||{}).value)||null;ST.fim=((document.getElementById('oe-df')||{}).value)||null;_rerender();};
+    function _rerender(){if(!ST.tplData||!window.OEE_TPL_Analysis)return;try{var r=window.OEE_TPL_Analysis.analyze(ST.tplData,{inicio:ST.inicio,fim:ST.fim});ST.analysis=r;window.OEE_TPL._dispatch(r);}catch(e){console.error('[OEE TPL] Erro re-render:',e);}}
+
+    window.OEE_TPL={
+        _lastAnalysis:null,
+        _dispatch:function(r){renderAbaOEE(r,'tab-oee-colhedoras');renderAbaCaminhoes(r);renderAbaGargalos(r);renderAbaEficiencia(r);renderAbaComparativo(r);},
+        renderColhedoras:function(rows){try{if(!window.OEE_TPL_Analysis)return;ST.tplData=rows;var r=window.OEE_TPL_Analysis.analyze(rows,{inicio:ST.inicio,fim:ST.fim});this._lastAnalysis=r;ST.analysis=r;this._dispatch(r);}catch(e){console.error('[OEE_TPL.renderColhedoras]',e);}},
+        renderCaminhoes:function(){try{if(this._lastAnalysis)renderAbaCaminhoes(this._lastAnalysis);}catch(e){}},
+        renderComparativo:function(){try{if(this._lastAnalysis)renderAbaComparativo(this._lastAnalysis);}catch(e){}},
+        renderGargalos:function(){try{if(this._lastAnalysis)renderAbaGargalos(this._lastAnalysis);}catch(e){}},
+    };
+    window.renderOEEFromTPL=function(id,r,d){if(d)ST.tplData=d;renderAbaOEE(r,id);};
+    window.OEE_TPL_COLORS=COR;
+    window.OEE_TPL_STATE=ST;
+    console.log('[OEE_tpl_renderer v5.0] Registrado — UI integrada ao padrão AgroAnalytics.');
+})();

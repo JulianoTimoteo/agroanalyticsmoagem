@@ -75,10 +75,12 @@ function _renderDoughnut(etapas) {
             labels,
             datasets: [{
                 data:            dados,
-                backgroundColor: colors.map(c => c + 'bb'),
-                borderColor:     colors,
+                backgroundColor: colors.map(c => c + 'cc'),
+                borderColor:     colors.map(c => c),
                 borderWidth:     2,
-                hoverOffset:     8
+                hoverOffset:     8,
+                // Remove dark outline between slices
+                spacing:         0
             }]
         },
         options: {
@@ -89,11 +91,13 @@ function _renderDoughnut(etapas) {
                 legend: {
                     position: 'bottom',
                     labels: {
-                        color: '#D8D8D8',
+                        color: document.documentElement.getAttribute('data-theme') === 'light'
+                            ? '#1f2937' : '#F0F0F0',
                         font: { size: 11, weight: '700' },
-                        padding: 10,
+                        padding: 12,
                         usePointStyle: true,
-                        pointStyleWidth: 10
+                        pointStyle: 'rect',
+                        pointStyleWidth: 12,
                     }
                 },
                 tooltip: {

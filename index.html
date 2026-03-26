@@ -677,6 +677,9 @@
                     <button class="tab-button" data-tab="tab-consumo" onclick="safeShowTab('tab-consumo')">
                         <i class="fas fa-gas-pump"></i><span>Consumo</span>
                     </button>
+                    <button class="tab-button" data-tab="tab-consumo-cam" onclick="safeShowTab('tab-consumo-cam')">
+                        <i class="fas fa-truck"></i><span>Consumo Cam</span>
+                    </button>
                     <button class="tab-button nav-oee-btn" data-tab="tab-oee-colhedoras" onclick="safeShowTab('tab-oee-colhedoras')">
                         <i class="fas fa-chart-bar"></i><span>OEE Colh.</span><em class="nav-badge">OEE</em>
                     </button>
@@ -696,13 +699,13 @@
                     <button class="tab-button" data-tab="tab-caminhao" onclick="safeShowTab('tab-caminhao')">
                         <i class="fas fa-truck"></i><span>Caminhões</span>
                     </button>
-                    <button class="tab-button nav-oee-btn" data-tab="tab-oee-caminhoes" onclick="safeShowTab('tab-oee-caminhoes')">
+                    <button class="tab-button nav-oee-btn" data-tab="tab-oee-caminhoes" onclick="safeShowTab('tab-oee-caminhoes')" style="display:none">
                         <i class="fas fa-chart-bar"></i><span>OEE Cam.</span><em class="nav-badge">OEE</em>
                     </button>
-                    <button class="tab-button nav-oee-btn" data-tab="tab-comparativo-oee" onclick="safeShowTab('tab-comparativo-oee')">
+                    <button class="tab-button nav-oee-btn" data-tab="tab-comparativo-oee" onclick="safeShowTab('tab-comparativo-oee')" style="display:none">
                         <i class="fas fa-balance-scale"></i><span>Comparativo</span><em class="nav-badge">OEE</em>
                     </button>
-                    <button class="tab-button nav-oee-btn" data-tab="tab-gargalos" onclick="safeShowTab('tab-gargalos')">
+                    <button class="tab-button nav-oee-btn" data-tab="tab-gargalos" onclick="safeShowTab('tab-gargalos')" style="display:none">
                         <i class="fas fa-exclamation-triangle"></i><span>Gargalos</span><em class="nav-badge nav-badge--warn">!</em>
                     </button>
                 </div>
@@ -1055,6 +1058,20 @@
                             </div>
                         </div>
 
+                        <div id="tab-consumo-cam" class="tab-pane">
+                            <div class="analytics-row">
+                                <div class="analytics-card glass-card full-width">
+                                    <div id="consumo-cam-tab-content" style="padding:4px 0;">
+                                        <div style="display:flex;align-items:center;gap:12px;padding:20px;
+                                            color:var(--text-secondary);font-size:0.9rem;">
+                                            <i class="fas fa-spinner fa-spin" style="color:#f97316;font-size:1.2rem;"></i>
+                                            Carregando dados de consumo dos caminhões...
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div id="tab-caminhao" class="tab-pane">
                             <style>
                             /* ── CAMINHÕES TAB REDESIGN ── */
@@ -1086,12 +1103,8 @@
                             .cam-bar-list { display:flex; flex-direction:column; gap:10px; }
                             .cam-bar-item { display:flex; flex-direction:column; gap:4px; }
                             .cam-bar-meta { display:flex; justify-content:space-between; align-items:baseline; }
-                            .cam-bar-name { font-size:0.78rem; font-weight:700; color:var(--text); white-space:nowrap; overflow:visible; max-width:none; }
+                            .cam-bar-name { font-size:0.78rem; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:65%; }
                             .cam-bar-val  { font-size:0.75rem; font-weight:800; color:#2196F3; }
-                            /* Tema claro: textos pretos */
-                            [data-theme="light"] .cam-card-title { color: #111 !important; opacity:1; }
-                            [data-theme="light"] .cam-bar-name   { color: #111 !important; }
-                            [data-theme="light"] .cam-bar-val    { color: #111 !important; }
                             .cam-bar-track { height:6px; background:rgba(255,255,255,0.07); border-radius:3px; overflow:hidden; }
                             .cam-bar-fill  { height:100%; border-radius:3px; transition:width .6s cubic-bezier(.34,1.2,.64,1); }
                             .cam-chart-full { width:100%; min-height:240px; }
@@ -1172,15 +1185,11 @@
                             .colh-bar-item { display:flex; flex-direction:column; gap:4px; }
                             .colh-bar-meta { display:flex; justify-content:space-between; align-items:baseline; }
                             .colh-bar-name {
-                                font-size:0.78rem; font-weight:700;
-                                color: var(--text); white-space:nowrap;
-                                overflow:visible; max-width:none;
+                             font-size:0.78rem; font-weight:700;
+                             color: var(--text); white-space:nowrap;
+                             overflow:visible; max-width:none;
                             }
                             .colh-bar-val  { font-size:0.75rem; font-weight:800; color:var(--primary); }
-                            /* Tema claro: textos pretos */
-                            [data-theme="light"] .colh-card-title { color: #111 !important; opacity:1; }
-                            [data-theme="light"] .colh-bar-name   { color: #111 !important; }
-                            [data-theme="light"] .colh-bar-val    { color: #111 !important; }
                             .colh-bar-track { height:6px; background:rgba(255,255,255,0.07); border-radius:3px; overflow:hidden; }
                             .colh-bar-fill  { height:100%; border-radius:3px; transition:width .6s cubic-bezier(.34,1.2,.64,1); }
 
@@ -1458,15 +1467,16 @@
     <script src="js/FrenteDeTrabalho/FrenteGrid.js"></script>
     <script src="js/Metas/MetasGrid.js"></script>
     <script src="js/Consumo/ConsumoPerformance.js"></script>
+    <script src="js/Consumo/ConsumoCaminhoes.js"></script>
     <script src="js/VisaoGlobal/VisaoGlobal.js"></script>
 
-    <!-- ═══ OEE / TPL ═══ -->
+    <!--
     <script src="js/shared/oee-fleet-classifier.js"></script>
-    <script src="js/OEE/Oee_analyzer.js"></script>
+    <script src="js/OEE/Oee_analyzer.js"></script>//
     <script src="js/OEE/OEE_renderer.js"></script>
     <script src="js/OEE/OEE_unified.js"></script>
     <script src="js/OEE/OEE_tpl_renderer.js"></script>
-    <script src="js/OEE/OEE_tpl_analysis.js"></script>
+    <script src="js/OEE/OEE_tpl_analysis.js"></script> ═══ OEE / TPL ═══ -->
 
     <!-- ═══ MOBILE / MODTV ═══ -->
     <script src="js/shared/Mobile_revolution.js"></script>

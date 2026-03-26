@@ -186,7 +186,7 @@ if (typeof DataAnalyzerRankings === 'undefined') {
                 const peso = parseFloat(row.peso) || 0;
                 if (peso === 0) return;
                 const allEquipment = this.analyzer._extractEquipments(row);
-                if (!allEquipment.some(eq => ['80','81','82','83','84','85'].some(p => String(eq).startsWith(p)))) return;
+                if (!allEquipment.some(eq => String(eq).startsWith('80'))) return;
 
                 const listaOperadores = (row.operadores && row.operadores.length > 0) ? row.operadores : (row.operador ? [row.operador] : []);
                 const validOperadores = listaOperadores.filter(op => String(op).trim().length > 0 && !String(op).toUpperCase().includes('TOTAL'));
@@ -222,19 +222,11 @@ if (typeof DataAnalyzerRankings === 'undefined') {
 
             return Array.from(operadoresMap.values()).sort((a, b) => b.peso - a.peso).slice(0, 5)
                 .map(item => {
-                    // Tenta encontrar o nome do operador nas descriÃ§Ãµes
-                    let displayName = this.findOperatorName(data, item.codigo);
-                    
-                    // Se nÃ£o encontrou nas descriÃ§Ãµes, usa o melhor nome disponÃ­vel
-                    if (!displayName) {
-                        displayName = item.bestName.replace(/^[0-9]+\s*(?:-|â€“)?\s*/, '').trim();
-                        if (displayName.length === 0) displayName = item.bestName;
-                    }
-
+                    // Mantém "264060 - ALEX" — COD + NOME completo
+                    const displayName = item.bestName || item.codigo || '—';
                     return {
-                        codigo: displayName, 
-                        peso: item.peso,
-                        frente: this.findMostCommonFront(data, item.codigo) 
+                        codigo: displayName,
+                        peso: item.peso
                     };
                 });
         }
@@ -262,6 +254,7 @@ if (typeof DataAnalyzerRankings === 'undefined') {
                             transbordoMap.set(trCode, { 
                                 codigo: trCode,
                                 codigoOriginal: trStr,
+                                bestName: trStr,
                                 peso: 0 
                             });
                         }
@@ -272,15 +265,10 @@ if (typeof DataAnalyzerRankings === 'undefined') {
             });
             
             return Array.from(transbordoMap.values()).sort((a, b) => b.peso - a.peso).slice(0, 5)
-                .map(item => {
-    // Mantém "264060 - ALEX" completo (COD + NOME)
-    const displayName = item.bestName || item.codigo || '—';
-    return {
-        codigo: displayName,
-        peso: item.peso,
-        frente: this.findMostCommonFront(data, item.codigo)
-    };
-});
+                .map(item => ({
+                    codigo: item.codigoOriginal || item.codigo,
+                    peso: item.peso
+                }));
         }
 
         analyzeCamEscravo(data) { return []; }

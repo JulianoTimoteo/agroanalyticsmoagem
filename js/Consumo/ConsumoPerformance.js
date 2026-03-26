@@ -1,12 +1,18 @@
 // ============================================================
-// visualizer-consumo.js  –  AgroAnalytics  v10.0 (Executive UI)
+// visualizer-consumo.js  –  AgroAnalytics  v10.2 (TMD Acumulado Correto)
 // Aba de Consumo – Cálculos Blindados & Padrão Visão Global
+// 
+// FIX v10.1:
+//   - Correção do TMD Acumulado (ColConAcm): 
+//     * _getTonCana com fallback via Ton/Hr × Horas
+//     * _getDiasTrab com fallback via Qtd Dias Periodo
+//     * _calcStats agora soma corretamente toneladas e dias
 // ============================================================
 
 if (typeof VisualizerConsumo === 'undefined') {
 class VisualizerConsumo {
     constructor() {
-        console.log('[Consumo] v10.0 (Executive UI & Math Fix) iniciado');
+        console.log('[Consumo] v10.2 (TMD Acumulado Correto) iniciado');
         this.METAS = { TMD: 633, LITROS_HR: 36, LITROS_TON: 1.02, DISP: 85, RENG: 0.98 };
     }
 
@@ -71,6 +77,8 @@ class VisualizerConsumo {
         
         .vc-kpi-meta { font-size:0.7rem; font-weight:700; padding:3px 8px; border-radius:6px; background:rgba(255,255,255,0.05); border:1px solid var(--vc-bd-card); color:var(--vc-text-sec); display:inline-flex; align-items:center; gap:5px; align-self:flex-start; margin-bottom:8px;}
         [data-theme="light"] .vc-kpi-meta { background: #f3f4f6; color: var(--text, #F0F0F0); }
+        .vc-kpi-notice { font-size:0.6rem; color:#94a3b8; background:rgba(255,255,255,0.04); border:1px dashed rgba(255,255,255,0.1); border-radius:5px; padding:3px 7px; margin-top:4px; line-height:1.4; }
+        [data-theme="light"] .vc-kpi-notice { color:#64748b; background:#f8fafc; border-color:#e2e8f0; }
 
         .vc-kpi-row { display:flex; justify-content:space-between; align-items:center; padding-top:10px; border-top:1px solid var(--vc-bd-card); margin-top:6px;}
         .vc-kpi-label { font-size:0.75rem; color:var(--vc-text-sec); font-weight:600; display:flex; align-items:center; gap:6px; }
@@ -120,8 +128,10 @@ class VisualizerConsumo {
         const container = document.getElementById('consumo-tab-content');
         if (!container) return;
 
-        const d1Prop  = this._filterProprias(Array.isArray(d1Data)  ? d1Data  : []);
-        const acmProp = this._filterProprias(Array.isArray(acmData) ? acmData : []);
+        // d1Data: ColConD1 (dia atual) — keepMax=false mantém linha do dia (menor Qtd Dias)
+        // acmData: ColConAcm (acumulado/safra) — keepMax=true mantém maior período
+        const d1Prop  = this._filterProprias(Array.isArray(d1Data)  ? d1Data  : [], false);
+        const acmProp = this._filterProprias(Array.isArray(acmData) ? acmData : [], true);
 
         if (d1Prop.length === 0 && acmProp.length === 0) {
             container.innerHTML = this._getStyles() + `
@@ -206,37 +216,121 @@ class VisualizerConsumo {
         return 0;
     }
 
-    _filterProprias(rows) {
-        return rows.filter(r => String(r['Equip'] || r['equip'] || r['EQUIP'] || '').trim().startsWith('80'));
+    // keepMax=true → mantém linha com maior Qtd Dias (acumulado/safra)
+    // keepMax=false → mantém linha com menor Qtd Dias ≥ 1 (dia atual)
+    _filterProprias(rows, keepMax = true) {
+        const allProp = rows.filter(r => String(r['Equip'] || r['equip'] || r['EQUIP'] || '').trim().startsWith('80'));
+        // Se não há coluna "Periodo", retorna tudo diretamente
+        const hasPeriodo = allProp.some(r => r['Periodo'] !== undefined || r['periodo'] !== undefined);
+        if (!hasPeriodo) return allProp;
+        // Deduplica por máquina mantendo o período correto
+        const byEquip = new Map();
+        allProp.forEach(r => {
+            const eq  = String(r['Equip'] || r['equip'] || '').trim();
+            const qtd = parseFloat(r['Qtd Dias Periodo'] || r['qtd dias periodo'] || r['QtdDiasPeriodo'] || 0);
+            const existing = byEquip.get(eq);
+            if (!existing) {
+                byEquip.set(eq, r);
+            } else {
+                const existQtd = parseFloat(existing['Qtd Dias Periodo'] || 0);
+                const shouldReplace = keepMax ? (qtd > existQtd) : (qtd > 0 && qtd < existQtd);
+                if (shouldReplace) byEquip.set(eq, r);
+            }
+        });
+        return Array.from(byEquip.values());
     }
 
-    _getTonCana(r) { return this._getVal(r, ['toncana', 'toneladas', 'tonelada']); }
-    _getHoras(r) { return this._getVal(r, ['horas', 'horasmotor', 'horasmotorligado', 'hrsmotor', 'hrsoperacional', 'hrsoperacionais', 'horasoperacionais', 'horasoperacional']); }
+    // 🔧 FIX 1: _getTonCana com fallback via Ton/Hr × Horas
+    _getTonCana(r) {
+        // Tenta leitura direta do campo "Ton. Cana"
+        const direct = this._getVal(r, ['toncana', 'toneladas', 'tonelada', 'ton']);
+        if (direct > 0) return direct;
+        
+        // Fallback: Ton/Hr × Horas (ambos presentes no ColConAcm)
+        const tonHr = this._getVal(r, ['tonhr', 'ton/hr', 'tonperhour', 'tonporhora', 'tonhora']);
+        const hrs   = this._getHoras(r);
+        
+        if (tonHr > 0 && hrs > 0) {
+            const calc = tonHr * hrs;
+            if (calc > 0 && calc < 50000) return calc; // sanity: max 50k ton por máquina
+        }
+        return 0;
+    }
+
+    // 🔧 FIX 2: _getHoras com fallback via fallback genérico
+    _getHoras(r) {
+        const direct = this._getVal(r, ['horas', 'horasmotor', 'horasmotorligado', 'hrsmotor', 'hrsoperacional', 'hrsoperacionais', 'horasoperacionais', 'horasoperacional']);
+        if (direct > 0) return direct;
+        
+        // Fallback: procura qualquer campo com "hora" no nome
+        for (const key of Object.keys(r || {})) {
+            const lowerKey = key.toLowerCase();
+            if (lowerKey.includes('hora') && !lowerKey.includes('ton')) {
+                const v = this._p(r[key]);
+                if (v > 0 && v < 5000) return v; // sanity: max 5000h
+            }
+        }
+        return 0;
+    }
+
     _getLitrosTotal(r) { return this._getVal(r, ['combustivel', 'litrostotal', 'litrosconsumo', 'combustivellitros']); }
     _getLitrosHr(r) { return this._getVal(r, ['litroshr', 'litros/hr', 'litros_hr', 'litros/hora', 'litros_hora', 'litroshora', 'litrosperhour', 'lhr', 'l/h', 'lh', 'consumohorario', 'consumo']); }
-    // Campo "Litros/Ton" pré-calculado por máquina (ColConAcm) — para média simples no acumulado
     _getLitrosTon(r) { return this._getVal(r, ['litroston', 'litros/ton', 'litros_ton', 'litrosperton', 'l/t', 'lt']); }
-    _getDiasTrab(r) { return this._getVal(r, ['diastrab', 'diastrabalhados']); }
+    
+    // v10.2: _getDiasTrab usa APENAS Dias Trab. real para TMD correto
+    // NÃO usa Qtd Dias Periodo como fallback (causava TMD menor que o real)
+    _getDiasTrab(r) {
+        // Prioridade 1: campo direto "Dias Trab." (dias efetivamente trabalhados)
+        const direct = this._getVal(r, ['diastrab', 'diastrabalhados', 'dias']);
+        if (direct > 0) return direct;
+        
+        // Prioridade 2: calcula pela diferença de datas no campo Periodo
+        const periodo = r['Periodo'] || r['periodo'] || '';
+        if (periodo && typeof periodo === 'string') {
+            const dates = periodo.match(/\d{2}\/\d{2}\/\d{4}/g);
+            if (dates && dates.length === 2) {
+                const [d1, d2] = dates;
+                const [dd1, mm1, aa1] = d1.split('/').map(Number);
+                const [dd2, mm2, aa2] = d2.split('/').map(Number);
+                const inicio = new Date(aa1, mm1-1, dd1);
+                const fim = new Date(aa2, mm2-1, dd2);
+                const diff = Math.round((fim - inicio) / (1000 * 60 * 60 * 24)) + 1;
+                if (diff > 0 && diff < 366) return diff;
+            }
+        }
+        // Prioridade 3 (último recurso): Qtd Dias Periodo
+        const qtd = this._p(r['Qtd Dias Periodo'] || r['qtd dias periodo'] || r['QtdDiasPeriodo'] || 0);
+        if (qtd > 0) return qtd;
+        
+        return 1;
+    }
+    
     _getREnerg(r) {
-        // PRIMARY: busca direta pelos nomes exatos conhecidos do Firestore/GAS
-        // ColConAcm: "R. Energetico" (sem acento)
-        // ColConD1:  "R. Energético" (com acento)
+        // ColConAcm: "R. Energetico" (sem acento) — valores tipicamente 60–130 (índice × 100)
+        // ColConD1:  "R. Energético" (com acento) — mesma escala
+        // _normalize: converte para escala 0–2 (divide por 100 se valor > 2)
+        const _normalize = v => {
+            if (v <= 0) return 0;
+            if (v > 2)  return v / 100; // e.g. 114 → 1.14
+            return v;                   // já está em 0–2
+        };
+
         const DIRECT_KEYS = [
             'R. Energetico', 'R. Energético',
             'R.Energetico',  'R.Energético',
-            'R. Energetico ','R. Energético ',   // trailing space
-            ' R. Energetico',' R. Energético',   // leading space
-            'R. Energetico\t','R. Energético\t', // tab
+            'R. Energetico ','R. Energético ',
+            ' R. Energetico',' R. Energético',
+            'R. Energetico	','R. Energético	',
         ];
         for (const k of DIRECT_KEYS) {
             if (r[k] !== undefined && r[k] !== null && r[k] !== '') {
                 const v = this._p(r[k]);
-                if (v > 0 && v <= 2) return v;
+                const n = _normalize(v);
+                if (n > 0) return n;
             }
         }
-        // FALLBACK: busca normalizada (cobre variações de encoding inesperadas)
-        // Normaliza acentos ANTES do strip para não perder "é" → ""
-        const TARGET = ['renergetico', 'rendimentoenergetico', 'rendenerg'];
+        // Fuzzy: percorre todas as chaves normalizando acentos
+        const TARGET = ['renergetico', 'rendimentoenergetico', 'rendenerg', 'energetico'];
         const _clean = s => s.toLowerCase()
             .replace(/[áàâãä]/g,'a').replace(/[éèêë]/g,'e')
             .replace(/[íìîï]/g,'i').replace(/[óòôõö]/g,'o').replace(/[úùûü]/g,'u')
@@ -244,7 +338,8 @@ class VisualizerConsumo {
         for (const key of Object.keys(r || {})) {
             if (TARGET.includes(_clean(key))) {
                 const v = this._p(r[key]);
-                if (v > 0 && v <= 2) return v;
+                const n = _normalize(v);
+                if (n > 0) return n;
             }
         }
         return 0;
@@ -266,46 +361,103 @@ class VisualizerConsumo {
     }
 
     // ─────────────────────────────────────────────
-    // CÁLCULOS GLOBAIS (BASEADOS EM SOMA TOTAL, NÃO EM MÉDIA DE MÉDIAS)
+    // LÊ CAMPO PRÉ-CALCULADO DE UMA ROW (ColConAcm/ColConD1)
+    // ─────────────────────────────────────────────
+    _getPreCalcLhr(r) {
+        // ColConAcm: "Litros/Hr" já é a taxa L/h calculada por máquina
+        const v = this._p(r['Litros/Hr'] ?? r['Litros/hr'] ?? r['litros/hr'] ?? r['LitrosHr'] ?? '');
+        return (v > 0 && v < 200) ? v : 0; // sanity: L/h deve ser < 200
+    }
+    _getPreCalcLton(r) {
+        const v = this._p(r['Litros/Ton'] ?? r['Litros/ton'] ?? r['litros/ton'] ?? r['LitresTon'] ?? '');
+        return (v > 0 && v < 20) ? v : 0; // sanity: L/t deve ser < 20
+    }
+
+    // ─────────────────────────────────────────────
+    // CÁLCULOS GLOBAIS — MÉDIA POR MÁQUINA (não pool de brutos)
+    // 🔧 FIX 4: _calcStats corrigido para somar corretamente toneladas e dias
     // ─────────────────────────────────────────────
     _calcStats(rows) {
+        // ================================================================
+        // REGRA FIXA: L/h e L/t são MÉDIAS por máquina.
+        // Para cada máquina: usa campo pré-calculado se > 0,
+        // senão calcula a partir dos brutos (comb/horas ou comb/ton).
+        // NUNCA usa sumL/sumH global (causa "soma maluca").
+        //
+        // 🔧 TMD ACUMULADO — MÉDIA PONDERADA POR HORAS (v10.3):
+        //   TMD = Σ(Ton_i) / Σ(Horas_i / 24)
+        //   Apenas equipamentos com horas > MIN_HORAS_DIA entram no cálculo.
+        //   Isso descarta automaticamente dias de chuva / máquinas paradas
+        //   sem precisar de filtro manual, pois horas ≈ 0 nesses dias.
+        //   Resultado esperado: entre 400–700 t/máq/dia.
+        // ================================================================
+        const MIN_HORAS_DIA = 4; // mínimo de horas produtivas para o dia ser válido
         const z = { TMD: 0, LITROS_HR: 0, LITROS_TON: 0, RENG: 0, count: 0 };
         if (!rows || rows.length === 0) return z;
 
-        let sumTon = 0, sumD = 0, sumH = 0, sumL = 0, cTon = 0;
-        // R.Energético — média simples: "soma e divide pela quantidade de inputs únicos"
+        let sumTon = 0, sumD = 0, cTon = 0;
+        let sumLhr = 0, cLhr = 0;
+        let sumLton = 0, cLton = 0;
         let sumRe = 0, cRe = 0;
 
         rows.forEach(r => {
+            // 🔧 FIX: _getTonCana agora tem fallback via Ton/Hr × Horas
             const ton  = this._getTonCana(r);
-            const dias = this._getDiasTrab(r) || 1;
+            // 🔧 FIX: _getDiasTrab agora tem fallback via Qtd Dias Periodo
+            const dias = this._getDiasTrab(r);
             const h    = this._getHoras(r);
             const comb = this._getLitrosTotal(r);
             const re   = this._getREnerg(r);
 
-            if (ton  > 0) { sumTon += ton; sumD += dias; cTon++; }
-            if (h    > 0) sumH += h;
-            if (comb > 0) sumL += comb;
-            if (re   > 0) { sumRe += re; cRe++; }
+            // Log para debug (apenas se ton ou dias não estiverem sendo capturados)
+            if (ton === 0 && dias === 0 && rows.length > 0) {
+                console.debug('[Consumo] Ton/Dias zero para equipamento:', 
+                    String(r['Equip'] || r['equip'] || '').trim(),
+                    '| Ton:', ton, '| Dias:', dias,
+                    '| Campos disponíveis:', Object.keys(r).slice(0, 5));
+            }
+
+            // Para TMD ponderado por horas: apenas equipamentos com horas >= MIN_HORAS_DIA
+            // entram no cálculo. Dias de chuva / máquinas paradas (h ≈ 0) são descartados
+            // automaticamente. Convertemos horas em dias (÷24) para manter t/máq/dia.
+            if (h >= MIN_HORAS_DIA && ton > 0) {
+                const diasEquiv = h / 24;
+                sumTon += ton;
+                sumD   += diasEquiv;
+                cTon++;
+            }
+            if (re  > 0) { sumRe  += re;  cRe++; }
+
+            // ── L/h por máquina: pré-calculado OU comb/horas ────────────
+            let lhr = this._getPreCalcLhr(r);
+            if (!(lhr > 0) && h > 0 && comb > 0) {
+                const calc = comb / h;
+                if (calc > 0 && calc < 300) lhr = calc; // sanity: max 300 L/h
+            }
+            if (lhr > 0) { sumLhr += lhr; cLhr++; }
+
+            // ── L/t por máquina: pré-calculado OU comb/ton ──────────────
+            let lt = this._getPreCalcLton(r);
+            if (!(lt > 0) && ton > 0 && comb > 0) {
+                const calc = comb / ton;
+                if (calc > 0 && calc < 20) lt = calc; // sanity: max 20 L/t
+            }
+            if (lt > 0) {
+                const ltNorm = lt > 10 ? lt / 100 : lt;
+                if (ltNorm > 0 && ltNorm < 20) { sumLton += ltNorm; cLton++; }
+            }
         });
 
-        // L/h: sempre calcula de brutos (sumL / sumH)
-        //   • ColConD1:  sumL = total litros dia,     sumH = total horas motor dia   → L/h real ✓
-        //   • ColConAcm: sumL = total litros acum.,   sumH = total horas motor acum. → L/h real ✓
-        //   Ignoramos o campo pré-calculado "Litros/Hr" porque pode ter escala errada no acumulado.
-        const litrosHr = sumH > 0 ? sumL / sumH : 0;
-
-        // L/t: sempre calcula de brutos (sumL / sumTon)
-        //   Mesma razão: garante consistência entre KPI e tabela individual.
-        const raw_lt = sumTon > 0 ? sumL / sumTon : 0;
-        const litrosTon = raw_lt > 10 ? raw_lt / 100 : raw_lt; // escala errada (ex: ml vs L)
+        // TMD ponderado por horas: Σ(Ton_i) / Σ(Horas_i / 24)
+        // Fallback: divide pelo número de equipamentos se sumD ainda for 0
+        const tmd = sumD > 0 ? sumTon / sumD : (cTon > 0 ? sumTon / cTon : 0);
 
         return {
-            TMD      : sumD   > 0 ? (sumTon / sumD) : 0,
-            LITROS_HR: litrosHr,
-            LITROS_TON: litrosTon,
-            RENG     : cRe > 0 ? (sumRe / cRe) : 0,
-            count    : cTon || rows.length
+            TMD       : tmd,
+            LITROS_HR : cLhr  > 0 ? sumLhr  / cLhr  : 0,  // MÉDIA, nunca soma
+            LITROS_TON: cLton > 0 ? sumLton / cLton : 0,  // MÉDIA, nunca soma
+            RENG      : cRe   > 0 ? sumRe   / cRe   : 0,
+            count     : cTon  || rows.length,
         };
     }
 
@@ -327,13 +479,9 @@ class VisualizerConsumo {
             if (prop.length > 0) {
                 let s = 0, c = 0;
                 prop.forEach(r => {
-                    // ⚠️ BUGFIX DISP: campo correto é 'Disp %' nas planilhas colConD1/colConAcm
                     let v = this._p(r['Disp %'] ?? r['Disp'] ?? r['disp'] ?? r['DISP'] ?? 0);
-                    // Se v > 100 está errado (nunca pode passar de 100%)
                     if (v > 100) v = v / 100;
-                    // Se v entre 0 e 1 está em decimal — converte para %
                     else if (v > 0 && v < 1) v = v * 100;
-                    // v entre 1 e 100 = já correto em percentual
                     if (v > 0 && v <= 100) { s += v; c++; }
                 });
                 if (c > 0) return s / c;
@@ -349,13 +497,15 @@ class VisualizerConsumo {
         if (!r) return null;
         const eq    = String(r['Equip'] || r['equip'] || '').trim();
         const ton   = this._getTonCana(r);
-        const dias  = this._getDiasTrab(r) || 1;
+        const dias  = this._getDiasTrab(r);
         const horas = this._getHoras(r);
         const comb  = this._getLitrosTotal(r);
 
-        const tmd   = ton > 0 ? ton / dias : null;
-        const lhr   = horas > 0 ? comb / horas : null;
-        const lton  = ton > 0 ? comb / ton : null;
+        const tmd   = ton > 0 && dias > 0 ? ton / dias : null;
+        // Prefer pre-computed column (ColConAcm), fallback to brute calculation
+        const lhr   = this._getPreCalcLhr(r) || (horas > 0 ? comb / horas : null);
+        const rawLton = this._getPreCalcLton(r) || (ton > 0 ? comb / ton : null);
+        const lton  = rawLton && rawLton > 10 ? rawLton / 100 : rawLton;
         const re    = this._getREnerg(r) || null;
 
         const dispColCon = this._getDispPct(r);
@@ -400,7 +550,7 @@ class VisualizerConsumo {
     }
 
     _buildCard(cfg) {
-        const { titulo, sub, ico, meta, dV, dC, aV, aC, accent } = cfg;
+        const { titulo, sub, ico, meta, dV, dC, aV, aC, accent, notice } = cfg;
         const colorAccent = accent || '#38bdf8';
         return `
         <div class="vc-kpi" style="--vc-accent: ${colorAccent};">
@@ -413,7 +563,7 @@ class VisualizerConsumo {
             </div>
             
             ${meta !== '—' ? `<div class="vc-kpi-meta"><i class="fas fa-bullseye" style="margin-right:4px;"></i> Meta: ${meta}</div>` : ''}
-            
+            ${notice ? `<div class="vc-kpi-notice"><i class="fas fa-info-circle" style="margin-right:3px;opacity:0.7;"></i>${notice}</div>` : ''}
             <div class="vc-kpi-row" style="margin-top:auto;">
                 <span class="vc-kpi-label"><i class="fas fa-calendar-day" style="opacity:0.6;"></i> Hoje</span>
                 <span class="vc-b-${dC}">${dV}</span>
@@ -430,6 +580,7 @@ class VisualizerConsumo {
         return `
         <div class="vc-hero">
             ${this._buildCard({ titulo:'TMD', sub:'Ton. Máquina Dia', ico:'fas fa-weight-hanging', meta:`${M.TMD} t/máq`,
+                notice:'Baseado em Ton. / Dias Trabalhados. Não calculado via OEE.',
                 dV:this._f(d1.TMD,0), dC:this._clsMaior(d1.TMD, M.TMD), aV:this._f(acm.TMD,0), aC:this._clsMaior(acm.TMD, M.TMD), accent:'#6366f1', topKey:'tmd' })}
             ${this._buildCard({ titulo:'Litros / Hr', sub:'Consumo Horário', ico:'fas fa-tachometer-alt', meta:`${M.LITROS_HR} L/h`,
                 dV:this._f(d1.LITROS_HR,1), dC:this._clsMenor(d1.LITROS_HR, M.LITROS_HR), aV:this._f(acm.LITROS_HR,1), aC:this._clsMenor(acm.LITROS_HR, M.LITROS_HR), accent:'#0ea5e9', topKey:'lhr' })}
@@ -475,14 +626,14 @@ class VisualizerConsumo {
             <tr class="vc-row-dia ${rowClass}">
                 <td rowspan="2" class="left" style="color:var(--primary, #38bdf8); font-size:1.05rem; font-weight:800; border-right:1px solid var(--vc-bd-card); padding-left:20px; width:140px;">
                     <i class="fas fa-tractor" style="opacity:0.5; font-size:0.8rem; margin-right:8px;"></i>${eq}
-                </td>
+                 </td>
                 <td class="left" style="color:var(--vc-text-sec); font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Dia</td>
                 <td>${dm ? badge(this._f(dm.tmd,1), this._clsMaior(dm.tmd, M.TMD)) : naStr}</td>
                 <td>${dm ? badge(this._fp(dm.disp), this._clsDisp(dm.disp)) : naStr}</td>
                 <td>${dm ? badge(this._f(dm.lton,2), this._clsMenor(dm.lton, M.LITROS_TON)) : naStr}</td>
                 <td>${dm ? badge(this._f(dm.lhr,1), this._clsMenor(dm.lhr, M.LITROS_HR)) : naStr}</td>
                 <td>${dm && dm.re ? `<span style="color:var(--vc-text-sec); font-weight:600;">${this._f(dm.re,2)}</span>` : naStr}</td>
-            </tr>
+             </tr>
             <tr class="vc-row-acm ${rowClass}" style="border-bottom:1px solid var(--vc-bd-card);">
                 <td class="left" style="font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Acm</td>
                 <td>${am ? badge(this._f(am.tmd,1), this._clsMaior(am.tmd, M.TMD)) : naStr}</td>
@@ -490,7 +641,7 @@ class VisualizerConsumo {
                 <td>${am ? badge(this._f(am.lton,2), this._clsMenor(am.lton, M.LITROS_TON)) : naStr}</td>
                 <td>${am ? badge(this._f(am.lhr,1), this._clsMenor(am.lhr, M.LITROS_HR)) : naStr}</td>
                 <td>${am && am.re ? `<span style="color:var(--vc-text-sec); font-weight:600;">${this._f(am.re,2)}</span>` : naStr}</td>
-            </tr>`;
+             </tr>`;
         };
 
         const tbody = sorted.map(fr => {
@@ -503,8 +654,8 @@ class VisualizerConsumo {
                         <span><i class="fas fa-map-marker-alt" style="margin-right:6px; opacity:0.7;"></i> ${label}</span>
                         <span style="color:var(--vc-text-sec); font-weight:600; font-size:0.75rem; text-transform:none;">(${eqs.length} equipamentos)</span>
                     </div>
-                </td>
-            </tr>
+                 </td>
+             </tr>
             <tr class="vc-meta-row">
                 <td colspan="2" class="left" style="padding-left:20px; font-weight:800; letter-spacing:0.5px;"><i class="fas fa-bullseye" style="margin-right:6px;"></i> Referência (Meta)</td>
                 <td style="font-size:0.8rem;">${M.TMD}</td>
@@ -512,7 +663,7 @@ class VisualizerConsumo {
                 <td style="font-size:0.8rem;">${this._f(M.LITROS_TON,2)}</td>
                 <td style="font-size:0.8rem;">${M.LITROS_HR}</td>
                 <td style="font-size:0.8rem;">${M.RENG}</td>
-            </tr>
+             </tr>
             ${eqs.map(eq => machineRows(eq)).join('')}`;
         }).join('');
 
@@ -536,7 +687,7 @@ class VisualizerConsumo {
                         </tr>
                     </thead>
                     <tbody>${tbody}</tbody>
-                </table>
+                 </table>
             </div>
         </div>`;
     }
@@ -571,4 +722,5 @@ class VisualizerConsumo {
 }
 
 if (typeof window !== 'undefined') window.VisualizerConsumo = VisualizerConsumo;
+console.log('[Consumo] v10.2 (TMD Acumulado Correto) registrado.');
 }

@@ -1,4 +1,4 @@
-// app.js - VERSÃO COMPLETA CORRIGIDA (COM FIREBASE INTEGRADO E ABA CONSUMO)
+// app.js - VERSÃO COMPLETA CORRIGIDA (COM FIREBASE INTEGRADO E ABA CONSUMO CAM)
 
 // Utilitário de Criptografia para Segurança Local (apenas para dados não críticos)
 const SimpleCrypto = {
@@ -40,10 +40,11 @@ const SimpleCrypto = {
 class AgroLocalDB {
     constructor() {
         this.DB_NAME    = 'AgroAnalyticsDB';
-        this.DB_VERSION = 5; // ← bumped to avoid VersionError with existing DBs
+        this.DB_VERSION = 7; // v7 — adiciona stores camD1/camAcm (caminhões próprios)
         this._db        = null;
         this.STORES     = ['producao','potencial','metas','acmSafra',
-                           'consumoD1','consumoAcm','dispD1','dispAcm','tpl','_meta'];
+                           'consumoD1','consumoAcm','dispD1','dispAcm','tpl',
+                           'camD1','camAcm','_meta'];
     }
     async open() {
         if (this._db) return this._db;
@@ -122,22 +123,27 @@ class AgroLocalDB {
             this.saveTable('dispD1',    state.dispD1Data    || []),
             this.saveTable('dispAcm',   state.dispAcmData   || []),
             this.saveTable('tpl',       state.tplData       || []),
+            this.saveTable('camD1',     state.camD1Data     || []),
+            this.saveTable('camAcm',    state.camAcmData    || []),
             this.setMeta('lastSync',    Date.now()),
             this.setMeta('producaoLen', (state.data || []).length),
         ]);
     }
     async loadAllTables() {
         const [data, potentialData, metaData, acmSafraData,
-               consumoD1Data, consumoAcmData, dispD1Data, dispAcmData, tplData] =
+               consumoD1Data, consumoAcmData, dispD1Data, dispAcmData, tplData,
+               camD1Data, camAcmData] =
             await Promise.all([
                 this.getTable('producao'),  this.getTable('potencial'),
                 this.getTable('metas'),     this.getTable('acmSafra'),
                 this.getTable('consumoD1'), this.getTable('consumoAcm'),
                 this.getTable('dispD1'),    this.getTable('dispAcm'),
                 this.getTable('tpl'),
+                this.getTable('camD1'),     this.getTable('camAcm'),
             ]);
         return { data, potentialData, metaData, acmSafraData,
-                 consumoD1Data, consumoAcmData, dispD1Data, dispAcmData, tplData };
+                 consumoD1Data, consumoAcmData, dispD1Data, dispAcmData, tplData,
+                 camD1Data, camAcmData };
     }
     async getLastSyncAge() {
         const ts = await this.getMeta('lastSync');
@@ -147,103 +153,70 @@ class AgroLocalDB {
 
 class AgriculturalDashboard {
     constructor() {
-        // ── URL do Google Apps Script (receptor v5.0) ─────────────
-        // ── Planilhas TPL Mensais ────────────────────────────────────────────
-        // Adicione o Google Sheet ID de cada mês aqui.
-        // Para obter o ID: abra a planilha → copie da URL:
-        //   https://docs.google.com/spreadsheets/d/ <<< ESTE_É_O_ID >>> /edit
-        // A planilha deve estar compartilhada como "Qualquer pessoa com o link pode ver".
-        // ══════════════════════════════════════════════════════════════════════
-        // ✅ CONFIGURAÇÃO PRINCIPAL — preencha apenas esta URL
-        // Cole aqui a URL do seu Google Apps Script (AgroSync v6.2)
-        // Formato: https://script.google.com/macros/s/SEU_ID/exec
-        // O GAS consolida automaticamente PRODUCAO_07_2025, PRODUCAO_08_2025,
-        // todas as TPLs, etc. — sem precisar configurar nenhum ID aqui.
-        // ══════════════════════════════════════════════════════════════════════
         this.GAS_API_URL = 'https://script.google.com/macros/s/AKfycbySnMWO9OY8F23BMMYe0u1JqHfSZqVqhmpTlp6gbprLL6YobQHLgJM8rzvZlH-dzQ/exec';
 
-        // Parâmetros opcionais do GAS (passados como query string)
-        // meses: quantos meses buscar (padrão: 3 para TPL, 2 para Produção)
-        // safra: filtra por ano de safra (ex: '2026')
         this.GAS_PARAMS = {
-            producao: { meses: 2, safra: '' },  // ← ajuste conforme necessário
-            tpl:      { meses: 14, safra: '' }, // ← busca até 14 meses de TPL
+            producao: { meses: 2, safra: '' },
+            tpl:      { meses: 14, safra: '' },
         };
 
-        // TPL_PARTITIONS e PRODUCAO_PARTITIONS mantidos por compatibilidade
-        // com o método _fetchAllTplPartitions() legado — não são mais necessários
-        // quando GAS_API_URL está configurado.
         this.TPL_PARTITIONS = [];
-        // ══════════════════════════════════════════════════════════════
-        // FALLBACK DIRETO — IDs das planilhas de produção (sem GAS)
-        // Se o GAS demorar, o app lê direto via gviz (1-2s por planilha).
-        // Preencha com os IDs reais das planilhas PRODUCAO_MM_YYYY.
-        // ID está na URL: docs.google.com/spreadsheets/d/<<ID>>/edit
-        // ══════════════════════════════════════════════════════════════
-        this.PRODUCAO_PARTITIONS = [
-            // { key: 'PRODUCAO_08_2025', id: 'COLE_O_ID_AQUI' },
-            // { key: 'PRODUCAO_07_2025', id: 'COLE_O_ID_AQUI' },
-        ];
+        this.PRODUCAO_PARTITIONS = [];
 
-        // ── IndexedDB / PWA ──────────────────────────────────────
         this.localDB  = new AgroLocalDB();
-        // Versão do app — se mudar, limpa o IDB automaticamente para evitar dados corrompidos
-        this._APP_VERSION = '6.8.6';
+        this._APP_VERSION = '6.8.7';
         this._syncing = false;
 
-        // Inicializa módulos se disponíveis
         if (typeof IntelligentProcessor !== 'undefined') this.processor = new IntelligentProcessor(); 
         if (typeof DataVisualizer !== 'undefined') this.visualizer = new DataVisualizer();
         if (typeof DataValidator !== 'undefined') this.validator = new DataValidator();
         if (typeof DataAnalyzer !== 'undefined') this.analyzer = new DataAnalyzer();
         if (typeof VisualizerConsumo !== 'undefined') this.consumoRenderer = new VisualizerConsumo();
+        if (typeof VisualizerConsumoCam !== 'undefined') this.consumoCamRenderer = new VisualizerConsumoCam();
         if (typeof VisualizerVisaoGlobal !== 'undefined') this.visaoGlobalRenderer = new VisualizerVisaoGlobal();
 
-        // ── MÓDULOS OEE/TMD ──────────────────────────────────────
         if (typeof OEEAnalyzer !== 'undefined') this.oeeAnalyzer = new OEEAnalyzer();
         if (typeof VisualizerOEE !== 'undefined' && this.visualizer) {
             this.oeeRenderer = new VisualizerOEE(this.visualizer);
         }
-        this.oeeAnalysis   = null;  // Resultado OEE atual
-        this.tplData       = [];    // Linhas brutas do TPL (parseadas)
+        this.oeeAnalysis   = null;
+        this.tplData       = [];
         
-        // Estado da aplicação
         this.data = []; 
         this.potentialData = []; 
         this.metaData = []; 
         this.acmSafraData = []; 
+        // consumoCamRenderer já inicializado acima — não sobrescrever com null
         this.consumoD1Data = [];
         this.consumoAcmData = [];
+        this.camD1Data  = [];
+        this.camAcmData = [];
         this.dispD1Data = [];
         this.dispAcmData = [];
-        this.tplData = [];          // ← TPL para OEE
+        this.tplData = [];
         this.fleetData = []; 
         this.analysisResult = null;
         this.validationResult = null;
         this.isAnimatingParticles = true;
         this.animationFrameId = null; 
         
-        // Controle de Carrossel e Atualização
         this.currentSlideIndex = 0;
         this.carouselInterval = null; 
         this.refreshIntervalId = null; 
         this.refreshTimeoutId = null; 
         
-        // 🟢 SISTEMA DE USUÁRIOS (via Firebase)
         this.currentUser = null;
         this.currentUserRole = null;
         this.currentUserCustomPermissions = null;
         this.currentUserPermissions = {}; 
         
-        // Permissões Padrão (RBAC) - TODOS TEM ACESSO TOTAL
         this.permissions = {
-            'master': ['tab-gerenciar', 'tab-moagem', 'tab-consumo', 'tab-caminhao', 'tab-equipamento', 'tab-frentes', 'tab-metas', 'tab-horaria', 'tab-usuarios', 'tab-alertas', 'tab-visaoglobal', 'tab-oee-colhedoras', 'tab-oee-caminhoes', 'tab-comparativo-oee', 'tab-eficiencia-operacional', 'tab-gargalos'],
-            'admin':  ['tab-gerenciar', 'tab-moagem', 'tab-consumo', 'tab-caminhao', 'tab-equipamento', 'tab-frentes', 'tab-metas', 'tab-horaria', 'tab-usuarios', 'tab-alertas', 'tab-visaoglobal', 'tab-oee-colhedoras', 'tab-oee-caminhoes', 'tab-comparativo-oee', 'tab-eficiencia-operacional', 'tab-gargalos'],
-            'editor': ['tab-gerenciar', 'tab-moagem', 'tab-consumo', 'tab-caminhao', 'tab-equipamento', 'tab-frentes', 'tab-metas', 'tab-horaria', 'tab-usuarios', 'tab-alertas', 'tab-visaoglobal', 'tab-oee-colhedoras', 'tab-oee-caminhoes', 'tab-comparativo-oee', 'tab-eficiencia-operacional', 'tab-gargalos'],
-            'viewer': ['tab-gerenciar', 'tab-moagem', 'tab-consumo', 'tab-caminhao', 'tab-equipamento', 'tab-frentes', 'tab-metas', 'tab-horaria', 'tab-usuarios', 'tab-alertas', 'tab-visaoglobal', 'tab-oee-colhedoras', 'tab-oee-caminhoes', 'tab-comparativo-oee', 'tab-eficiencia-operacional', 'tab-gargalos']
+            'master': ['tab-gerenciar', 'tab-moagem', 'tab-consumo', 'tab-consumo-cam', 'tab-caminhao', 'tab-equipamento', 'tab-frentes', 'tab-metas', 'tab-horaria', 'tab-usuarios', 'tab-alertas', 'tab-visaoglobal', 'tab-oee-colhedoras', 'tab-oee-caminhoes', 'tab-comparativo-oee', 'tab-eficiencia-operacional', 'tab-gargalos'],
+            'admin':  ['tab-gerenciar', 'tab-moagem', 'tab-consumo', 'tab-consumo-cam', 'tab-caminhao', 'tab-equipamento', 'tab-frentes', 'tab-metas', 'tab-horaria', 'tab-usuarios', 'tab-alertas', 'tab-visaoglobal', 'tab-oee-colhedoras', 'tab-oee-caminhoes', 'tab-comparativo-oee', 'tab-eficiencia-operacional', 'tab-gargalos'],
+            'editor': ['tab-gerenciar', 'tab-moagem', 'tab-consumo', 'tab-consumo-cam', 'tab-caminhao', 'tab-equipamento', 'tab-frentes', 'tab-metas', 'tab-horaria', 'tab-usuarios', 'tab-alertas', 'tab-visaoglobal', 'tab-oee-colhedoras', 'tab-oee-caminhoes', 'tab-comparativo-oee', 'tab-eficiencia-operacional', 'tab-gargalos'],
+            'viewer': ['tab-gerenciar', 'tab-moagem', 'tab-consumo', 'tab-consumo-cam', 'tab-caminhao', 'tab-equipamento', 'tab-frentes', 'tab-metas', 'tab-horaria', 'tab-usuarios', 'tab-alertas', 'tab-visaoglobal', 'tab-oee-colhedoras', 'tab-oee-caminhoes', 'tab-comparativo-oee', 'tab-eficiencia-operacional', 'tab-gargalos']
         };
         
-        // Inicialização
         this._applyVisualFixes();
         this.initializeEventListeners();
         this.initializeParticles();
@@ -253,7 +226,6 @@ class AgriculturalDashboard {
         this.clearResults(); 
     }
 
-    // 🟢 INJEÇÃO DE CSS
     _applyVisualFixes() {
         const style = document.createElement('style');
         style.innerHTML = `
@@ -425,7 +397,7 @@ class AgriculturalDashboard {
             const userDoc = userQuery.docs[0];
             const userData = userDoc.data();
             
-            const SENHA_CORRETA = 'a123456@'; // Senha padrão
+            const SENHA_CORRETA = 'a123456@';
             
             if (password !== SENHA_CORRETA) {
                 throw new Error("Senha incorreta.");
@@ -587,7 +559,6 @@ class AgriculturalDashboard {
         const _closeMenu = () => {
             menuContainer.classList.remove('open');
             backdrop.classList.remove('active');
-            // Força ocultação IMEDIATA independente de CSS/transições
             backdrop.style.cssText = 'display:none !important; pointer-events:none !important; visibility:hidden !important; z-index:-1 !important;';
             document.body.style.overflowY = '';
             document.body.classList.remove('no-scroll');
@@ -602,15 +573,12 @@ class AgriculturalDashboard {
             _closeMenu();
         } else {
             menuContainer.classList.add('open');
-            // Limpa override inline antes de aplicar classe CSS
             backdrop.style.cssText = '';
             backdrop.classList.add('active');
             document.body.style.overflowY = 'hidden';
             document.body.classList.add('no-scroll');
         }
     }
-
-    // =================== LÓGICA DE UI E ABAS ===================
 
     showTab(tabId) {
         if (window.innerWidth <= 768) {
@@ -632,12 +600,9 @@ class AgriculturalDashboard {
             activePane.style.display = 'block';
         }
         
-        // data-tab selector supports both old and new grouped nav
         const activeBtn = document.querySelector(`[data-tab="${tabId}"]`) ||
                           document.querySelector(`.tab-button[onclick*='${tabId}']`);
         if (activeBtn) activeBtn.classList.add('active');
-
-        // TIME MACHINE removido — filtro de datas não funcional
         
         const needsParticles = (tabId === 'tab-gerenciar' || tabId === 'tab-usuarios');
         if (needsParticles && !this.isAnimatingParticles) {
@@ -656,7 +621,6 @@ class AgriculturalDashboard {
              this.stopCarousel();
         }
 
-        // Atualiza linha do tempo quando a aba HxH é aberta
         if (tabId === 'tab-horaria') {
             setTimeout(() => this.renderHxHTimeline(), 50);
         }
@@ -760,6 +724,7 @@ class AgriculturalDashboard {
                 { id: 'tab-caminhao', label: 'Caminhões' },
                 { id: 'tab-equipamento', label: 'Colheita' },
                 { id: 'tab-consumo', label: 'Consumo' },
+                { id: 'tab-consumo-cam', label: 'Consumo Cam' },
                 { id: 'tab-frentes', label: 'Frentes' },
                 { id: 'tab-metas', label: 'Metas' },
                 { id: 'tab-horaria', label: 'Entrega HxH' },
@@ -1213,7 +1178,7 @@ class AgriculturalDashboard {
                 nickname: email.split('@')[0],
                 name: name,
                 role: 'viewer',
-                customPermissions: ['tab-gerenciar', 'tab-moagem', 'tab-consumo', 'tab-caminhao', 'tab-equipamento', 'tab-frentes', 'tab-metas', 'tab-horaria', 'tab-usuarios', 'tab-visaoglobal'],
+                customPermissions: ['tab-gerenciar', 'tab-moagem', 'tab-consumo', 'tab-consumo-cam', 'tab-caminhao', 'tab-equipamento', 'tab-frentes', 'tab-metas', 'tab-horaria', 'tab-usuarios', 'tab-visaoglobal'],
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             });
@@ -1251,12 +1216,7 @@ class AgriculturalDashboard {
         }
     }
     
-    // Status da frota calculado a partir dos dados de produção locais
     async updateFleetStatus() {
-        // O status da frota é renderizado pelo FrenteGrid.renderFleetAndAvailabilityCards
-        // (chamado dentro do visualizer.updateDashboard) que lê a planilha Potencial.
-        // O StatusDaFrota.js é um módulo auxiliar — não há IDs individuais no HTML.
-        // Esta função existe apenas como hook para compatibilidade.
         try {
             if (window.StatusDaFrota && this.analysisResult) {
                 window.StatusDaFrota.update(this.analysisResult);
@@ -1425,8 +1385,6 @@ class AgriculturalDashboard {
         this.showLoadingAnimation(); 
         this.analysisResult = this.analyzer.analyzeAll(this.data, this.potentialData, this.metaData, this.validationResult, this.acmSafraData);
         
-
-        
         this.visualizer.updateDashboard(this.analysisResult);
         this.updateDashboardWithCorrectedValues();
         this.updateRollingAverages();
@@ -1436,7 +1394,6 @@ class AgriculturalDashboard {
     }
     
     calculateRealAccumulated() {
-        // ── Parser blindado BR ──────────────────────────────────────────────────
         const _toNum = (v) => {
             if (v === null || v === undefined || v === '') return 0;
             if (typeof v === 'number') return isNaN(v) ? 0 : v;
@@ -1447,11 +1404,6 @@ class AgriculturalDashboard {
             return isNaN(n) ? 0 : n;
         };
 
-        // ⚠️ NOTA: AcmSafra NÃO é usada aqui — ela representa o acumulado TOTAL
-        // da safra (meses), não o dia atual. É usada separadamente em
-        // updateDashboardWithCorrectedValues() para o card "Acumulado Safra".
-
-        // Prioridade 1: Soma do peso do ÚLTIMO DIA na base de produção (Firestore/GAS)
         if (this.data && this.data.length > 0) {
             let maxDate = null;
             this.data.forEach(item => {
@@ -1472,7 +1424,6 @@ class AgriculturalDashboard {
                     return sum;
                 }, 0);
 
-                // Aceita valores razoáveis para um dia de produção (10t–150.000t)
                 if (totalPeso > 10) return totalPeso;
             }
         }
@@ -1534,9 +1485,6 @@ class AgriculturalDashboard {
 
         const acumuladoReal = this.calculateRealAccumulated();
 
-        // Injeta o acumulado do dia (último dia real) no analysisResult
-        // para que AcumuladoEProgresso e ProjecaoDeMoagem usem o valor correto
-        // em vez de r.totalPesoLiquido que soma todos os meses.
         if (this.analysisResult) {
             this.analysisResult.acumuladoDia    = acumuladoReal;
             this.analysisResult.acumuladoRealDia = acumuladoReal;
@@ -1553,15 +1501,14 @@ class AgriculturalDashboard {
         updateEl('moagemTargetDisplay', metaDiaria.toLocaleString('pt-BR') + ' t');
         
         this.updateFleetStatus();
-        // Usa o acumulado da safra calculado pelo DataAnalyzer (via AcmSafra)
-        // CRÍTICO: garantir que o valor é um número grande (ex: 2818825), não 2.82
+        
         const _parseSafraNum = (v) => {
             if (!v && v !== 0) return 0;
             if (typeof v === 'number') return isNaN(v) ? 0 : v;
             let s = String(v).trim().replace(/[^\d,.-]/g, '');
             if (!s) return 0;
             const dots = (s.match(/\./g) || []).length;
-            if (dots > 1) s = s.replace(/\./g, ''); // remove milhar BR
+            if (dots > 1) s = s.replace(/\./g, '');
             s = s.replace(',', '.');
             return parseFloat(s) || 0;
         };
@@ -1572,7 +1519,6 @@ class AgriculturalDashboard {
         updateEl('moagemAcumuladoSafra', safraAcumulado.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' t');
         
         if (this.analysisResult && this.data && this.data.length > 0) {
-            // Usa os valores já calculados corretamente pelo DataAnalyzer
             const totalViagens = this.analysisResult.totalViagens || 0;
             const viagensProprias = this.analysisResult.viagensProprias || 0;
             const viagensTerceiros = this.analysisResult.viagensTerceiros || 0;
@@ -1582,30 +1528,30 @@ class AgriculturalDashboard {
             updateEl('viagensTerceiros', viagensTerceiros.toString());
         }
         
-        // moagemForecast é calculado por ProjecaoDeMoagem.js (acum/horasAgro×24) — não sobrescrever aqui
-
-        // ── RE-APLICA InformativoOperacional por último ──────────────────────
-        // O FrenteGrid.renderFleetAndAvailabilityCards (chamado por updateDashboard)
-        // sobrescreve os valores de disponibilidade com dados brutos. Chamamos o
-        // VisualizerKPIs depois para garantir os valores formatados corretamente.
         if (this.analysisResult && this.visualizer && this.visualizer.kpisRenderer) {
             try {
                 this.visualizer.kpisRenderer.updateHeaderStats(this.analysisResult);
             } catch(e) {}
         }
 
-        // 🔥 CHAMA A RENDERIZAÇÃO DE CONSUMO AQUI
         if (this.consumoRenderer) {
             this.consumoRenderer.render(
                 this.consumoD1Data,
                 this.consumoAcmData,
-                this.data,         // producao – para mapeamento frente↔equip
-                this.dispD1Data,   // ACMD1 – disp dia
-                this.dispAcmData   // ACM   – disp acumulada
+                this.data,
+                this.dispD1Data,
+                this.dispAcmData
             );
         }
 
-        // 📊 CHAMA A RENDERIZAÇÃO DA VISÃO GLOBAL AQUI
+        if (this.consumoCamRenderer) {
+            this.consumoCamRenderer.render(
+                this.camD1Data,
+                this.camAcmData,
+                this.data
+            );
+        }
+
         if (this.visaoGlobalRenderer) {
             this.visaoGlobalRenderer.render(
                 this.data,
@@ -1617,24 +1563,14 @@ class AgriculturalDashboard {
             );
         }
 
-        // ═══ NOVOS MÓDULOS MODULARES ═══
-        // Moagem
         if (window.StatusDaFrota)        window.StatusDaFrota.update(this.analysisResult);
 
-        // ── OEE TPL Tabs ─────────────────────────────────────────────────
         if (window.OEE_TPL && this.tplData && this.tplData.length > 0) {
             try {
-                // Roda análise analítica completa conforme spec (exclusivamente do TPL)
                 if (window.OEE_TPL_Analysis) {
                     const tplAnalysis = window.OEE_TPL_Analysis.analyze(this.tplData);
-                    // Injeta no analysisResult para acesso nos renderers
                     if (this.analysisResult) this.analysisResult.tplAnalysis = tplAnalysis;
-                    console.log('[OEE_TPL_Analysis] OEE:', (tplAnalysis.oee.oee * 100).toFixed(1) + '%',
-                        '| D:', (tplAnalysis.oee.disponibilidade * 100).toFixed(1) + '%',
-                        '| P:', (tplAnalysis.oee.performance * 100).toFixed(1) + '%',
-                        '| Q:', (tplAnalysis.oee.qualidade * 100).toFixed(1) + '%',
-                        '| Equipamentos:', tplAnalysis._meta.equipamentos,
-                        '| Validação:', JSON.stringify(tplAnalysis._meta.validacao));
+                    console.log('[OEE_TPL_Analysis] OEE:', (tplAnalysis.oee.oee * 100).toFixed(1) + '%');
                 }
                 window.OEE_TPL.renderColhedoras(this.tplData);
                 window.OEE_TPL.renderCaminhoes(this.tplData);
@@ -1644,12 +1580,8 @@ class AgriculturalDashboard {
         }
         if (window.AcumuladoEProgresso)  window.AcumuladoEProgresso.update(this.analysisResult);
         if (window.ProjecaoDeMoagem)     window.ProjecaoDeMoagem.update(this.analysisResult);
-
-        // Caminhões
         if (window.RankingCaminhoes)     window.RankingCaminhoes.update(this.analysisResult);
         if (window.GraficoRotaCaminhoes) window.GraficoRotaCaminhoes.update(this.analysisResult);
-
-        // Colhedoras
         if (window.RankingColhedoras)    window.RankingColhedoras.update(this.analysisResult);
         if (window.GraficoDisponibilidade && this.consumoAcmData)
             window.GraficoDisponibilidade.update(this.consumoAcmData);
@@ -1678,16 +1610,14 @@ class AgriculturalDashboard {
         this.updateDashboardWithCorrectedValues();
         await this.updateFleetStatus();
         this.updateRollingAverages();
-        this.renderHxHTimeline(); // ← Linha do tempo HxH
+        this.renderHxHTimeline();
 
-        // ── CÁLCULO E RENDERIZAÇÃO OEE/TMD ──────────────────────
         await this._yieldControl();
         this._runOEEAnalysis();
 
         this.showAnalyticsSection(true);
         if (this.canAccessTab('tab-moagem')) this.showTab('tab-moagem');
 
-        // ── Inicialização única dos módulos (primeira carga) ──
         if (this.analysisResult) {
             if (window.StatusDaFrota)        window.StatusDaFrota.init(this.analysisResult);
             if (window.AcumuladoEProgresso)  window.AcumuladoEProgresso.init(this.analysisResult);
@@ -1707,12 +1637,6 @@ class AgriculturalDashboard {
         this.initializeCarousel();
     }
 
-    /**
-     * Executa a análise OEE/TMD e renderiza as 5 novas abas.
-     * Chamado após processDataAsync concluir o fluxo principal.
-     * Opera com fallback seguro: se qualquer módulo falhar, não
-     * quebra o dashboard existente.
-     */
     _runOEEAnalysis() {
         try {
             if (!this.oeeAnalyzer || !this.oeeRenderer) {
@@ -1735,33 +1659,21 @@ class AgriculturalDashboard {
                 this.analysisResult.metaData
             );
 
-            // Renderiza as 5 abas OEE
             this.oeeRenderer.renderAbaOEEColhedoras(this.oeeAnalysis);
             this.oeeRenderer.renderAbaOEECaminhoes(this.oeeAnalysis);
             this.oeeRenderer.renderAbaComparativoOEE(this.oeeAnalysis);
             this.oeeRenderer.renderAbaEficiencia(this.oeeAnalysis);
             this.oeeRenderer.renderAbaGargalos(this.oeeAnalysis);
 
-            // Log de qualidade dos dados OEE
             const meta = this.oeeAnalysis.metadados;
             console.log(`[OEE] ✅ Análise concluída. Modelo: ${meta.modeloOEE} | TPL: ${this.oeeAnalysis.hasTpl ? 'SIM' : 'NÃO'}`);
-            Object.entries(this.oeeAnalysis.oeeGroups).forEach(([cat, g]) => {
-                const oeeStr = g.oeeOperacional != null ? (g.oeeOperacional * 100).toFixed(1) + '%' : 'N/D (sem TPL)';
-                console.log(`  ${cat}: OEE=${oeeStr} | TMD=${this.oeeAnalysis.tmd[cat].group.tmdReal.toFixed(0)} t/maq/dia | n=${g.nEquip}`);
-            });
-
         } catch (err) {
-            // Falha silenciosa: não quebra o dashboard principal
             console.error('[OEE] Erro na análise OEE — abas podem estar incompletas:', err);
         }
     }
 
     canAccessTab(tabId) { return true; }
 
-    /**
-     * Boot direto sem Firebase: mostra dashboard e inicia carregamento.
-     * Usado quando Firebase não está disponível ou como fallback.
-     */
     _directBoot() {
         const loginScreen = document.getElementById('login-screen');
         const mainDash = document.getElementById('main-dashboard');
@@ -1959,7 +1871,6 @@ class AgriculturalDashboard {
 
     showLoadingAnimation(msg) {
         let overlay = document.getElementById('loading-overlay');
-        // Cria o overlay dinamicamente se não existir no HTML
         if (!overlay) {
             overlay = document.createElement('div');
             overlay.id = 'loading-overlay';
@@ -1970,7 +1881,6 @@ class AgriculturalDashboard {
                 'backdrop-filter:blur(6px);transition:opacity 0.4s ease;'
             ].join('');
 
-            // Spinner
             const spinner = document.createElement('div');
             spinner.style.cssText = [
                 'width:64px;height:64px;',
@@ -1979,18 +1889,15 @@ class AgriculturalDashboard {
                 'animation:_ld-spin 0.9s linear infinite;margin-bottom:24px;'
             ].join('');
 
-            // Logo/título
             const title = document.createElement('div');
             title.style.cssText = 'color:#00D4FF;font-size:1.4rem;font-weight:700;letter-spacing:2px;margin-bottom:8px;';
             title.textContent = 'AgroAnalytics';
 
-            // Mensagem de status
             const status = document.createElement('div');
             status.id = 'loading-status-msg';
             status.style.cssText = 'color:#9ca3af;font-size:0.85rem;text-align:center;max-width:300px;transition:opacity 0.3s;line-height:1.4;';
             status.textContent = 'Carregando dados…';
 
-            // Barra de progresso
             const barWrap = document.createElement('div');
             barWrap.style.cssText = 'width:220px;height:3px;background:rgba(255,255,255,0.08);border-radius:2px;margin-top:16px;overflow:hidden;';
             const bar = document.createElement('div');
@@ -1998,7 +1905,6 @@ class AgriculturalDashboard {
             bar.style.cssText = 'height:100%;width:0%;background:linear-gradient(90deg,#00D4FF,#40800c);border-radius:2px;transition:width 0.5s ease;';
             barWrap.appendChild(bar);
 
-            // Botão "Limpar cache" — aparece após 15s se ainda estiver carregando
             const btnClear = document.createElement('button');
             btnClear.id = 'loading-clear-cache-btn';
             btnClear.textContent = '🔄 Limpar cache e recarregar';
@@ -2023,7 +1929,6 @@ class AgriculturalDashboard {
                 }
             }, 15000);
 
-            // Keyframes
             if (!document.getElementById('_ld-kf')) {
                 const st = document.createElement('style');
                 st.id = '_ld-kf';
@@ -2057,7 +1962,7 @@ class AgriculturalDashboard {
         overlay.style.opacity = '0';
         setTimeout(() => {
             overlay.style.display = 'none';
-            overlay.style.opacity = '1'; // reseta para próxima vez
+            overlay.style.opacity = '1';
         }, 600);
     }
     
@@ -2069,62 +1974,33 @@ class AgriculturalDashboard {
         if (displayEl) displayEl.innerHTML = `Próxima atualização: ${targetTimeStr} 🔄️`;
     }
 
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // TPL: Carregamento via gviz/CSV — igual ao AgroAnalytics Tratos v4.3
-    // SEM GAS, SEM Apps Script — funciona em qualquer rede/proxy
-    // ═════════════════════════════════════════════════════════════════════════
-
-    /** Monta URL gviz/CSV para um Google Sheet ID */
     _gvizUrl(sheetId) {
         return 'https://docs.google.com/spreadsheets/d/' + sheetId + '/gviz/tq?tqx=out:csv';
     }
 
-
-    /**
-     * Normaliza os nomes de coluna de uma linha do TPL para o formato
-     * esperado pelo OEEAnalyzer.aggregateTPL():
-     *   'COD. EQUIPAMENTO', 'DATA/HORA LOCAL', 'HRS OPERACIONAIS',
-     *   'HRS MOTOR LIGADO', 'DESC.GRUPO OPERAC.', 'DESC.OPERAÇÃO'
-     *
-     * O Google Sheets via gviz pode retornar variações como:
-     *   'COD.EQUIPAMENTO', 'DATA HORA LOCAL', 'HRS. OPERACIONAIS', etc.
-     */
     _normalizeTplRow(row) {
-        // Mapa de aliases → nome canônico esperado pelo OEEAnalyzer
         const ALIAS = {
-            // Código do equipamento
             'COD.EQUIPAMENTO':     'COD. EQUIPAMENTO',
             'COD EQUIPAMENTO':     'COD. EQUIPAMENTO',
             'CODIGO EQUIPAMENTO':  'COD. EQUIPAMENTO',
             'EQUIPAMENTO':         'COD. EQUIPAMENTO',
-
-            // Data/hora
             'DATA HORA LOCAL':     'DATA/HORA LOCAL',
             'DATA/HORA':           'DATA/HORA LOCAL',
             'DATA':                'DATA/HORA LOCAL',
             'DT APONTAMENTO':      'DATA/HORA LOCAL',
             'DATA APONTAMENTO':    'DATA/HORA LOCAL',
-
-            // Horas operacionais
             'HRS. OPERACIONAIS':   'HRS OPERACIONAIS',
             'HORAS OPERACIONAIS':  'HRS OPERACIONAIS',
             'HRS.OPERACIONAIS':    'HRS OPERACIONAIS',
             'HORA OPERACIONAL':    'HRS OPERACIONAIS',
-
-            // Horas motor ligado
             'HRS. MOTOR LIGADO':   'HRS MOTOR LIGADO',
             'HORAS MOTOR LIGADO':  'HRS MOTOR LIGADO',
             'HRS.MOTOR LIGADO':    'HRS MOTOR LIGADO',
             'MOTOR LIGADO':        'HRS MOTOR LIGADO',
-
-            // Grupo operacional
             'DESC GRUPO OPERAC':   'DESC.GRUPO OPERAC.',
             'DESC.GRUPO OPERAC':   'DESC.GRUPO OPERAC.',
             'GRUPO OPERACIONAL':   'DESC.GRUPO OPERAC.',
             'DESC GRUPO':          'DESC.GRUPO OPERAC.',
-
-            // Descrição da operação
             'DESC OPERACAO':       'DESC.OPERAÇÃO',
             'DESC.OPERACAO':       'DESC.OPERAÇÃO',
             'DESC OPERAÇÃO':       'DESC.OPERAÇÃO',
@@ -2136,18 +2012,12 @@ class AgriculturalDashboard {
         for (const [k, v] of Object.entries(row)) {
             const upper  = k.toUpperCase().trim();
             const mapped = ALIAS[upper];
-            // Usa o nome canônico se tiver alias, senão mantém original
             const key = mapped || k;
-            // Se já existe a chave canônica (de outro alias anterior), não sobrescreve
             if (!out[key]) out[key] = v;
         }
         return out;
     }
 
-    /**
-     * Busca UMA partição TPL (um mês) via gviz e retorna linhas parseadas.
-     * Compatível com IntelligentProcessor.parseCsvDirect() existente no projeto.
-     */
     async _fetchTplPartition(partition) {
         const url = this._gvizUrl(partition.id);
         console.log('[TPL] Buscando ' + partition.key + ' de ' + url.slice(0, 60) + '...');
@@ -2156,20 +2026,17 @@ class AgriculturalDashboard {
             if (!r.ok) throw new Error('HTTP ' + r.status);
             const csvText = await r.text();
 
-            // Detecta resposta inválida (planilha privada retorna HTML)
             if (!csvText || csvText.trim().startsWith('<!') || csvText.length < 20) {
                 console.warn('[TPL] ' + partition.key + ': resposta vazia ou HTML. A planilha está compartilhada publicamente?');
                 return [];
             }
 
-            // Parseia CSV usando o IntelligentProcessor já existente no projeto
             const jsonData = this.processor.parseCsvDirect(csvText);
             if (!jsonData || jsonData.length === 0) {
                 console.warn('[TPL] ' + partition.key + ': CSV sem dados');
                 return [];
             }
 
-            // Corrige datas ISO que o gviz às vezes retorna (2025-04-01T03:00:00.000Z)
             const ISO_RE = /^\d{4}-\d{2}-\d{2}T/;
             jsonData.forEach(row => {
                 for (const k of Object.keys(row)) {
@@ -2188,13 +2055,6 @@ class AgriculturalDashboard {
                 }
             });
 
-            // IMPORTANTE: NÃO chamar processor.normalizeData() no TPL.
-            // O OEEAnalyzer.aggregateTPL() precisa das colunas ORIGINAIS:
-            //   'COD. EQUIPAMENTO', 'DATA/HORA LOCAL', 'HRS OPERACIONAIS',
-            //   'HRS MOTOR LIGADO', 'DESC.GRUPO OPERAC.', 'DESC.OPERAÇÃO'
-            // normalizeData() renomearia essas colunas e quebraria o OEE.
-            //
-            // Fazemos apenas a correção de encoding nos headers:
             const tplRows = jsonData.map(row => {
                 const fixed = {};
                 for (const [k, v] of Object.entries(row)) {
@@ -2221,10 +2081,6 @@ class AgriculturalDashboard {
         }
     }
 
-    /**
-     * Busca TODAS as partições TPL configuradas em TPL_PARTITIONS em paralelo.
-     * Retorna array consolidado de todos os registros.
-     */
     async _fetchAllTplPartitions() {
         const partitions = (this.TPL_PARTITIONS || [])
             .filter(p => p && p.id && !p.id.includes('COLE_AQUI') && !p.id.includes('PREENCHER_'));
@@ -2258,15 +2114,6 @@ class AgriculturalDashboard {
         return all;
     }
 
-    /** Helper: mostra toast sem quebrar se o método não existir ainda */
-    /**
-     * Busca TODAS as planilhas de produção configuradas em PRODUCAO_PARTITIONS em paralelo.
-     * Consolida os dados de PRODUCAO_07_2025, PRODUCAO_08_2025, etc. em um único array.
-     * Filtra automaticamente apenas o último dia com dados para evitar
-     * somar todos os 31 dias do mês no acumulado diário.
-     * 
-     * @returns {Promise<Object[]>} Array consolidado de registros de produção do último dia
-     */
     async _fetchAllProducaoPartitions() {
         const partitions = (this.PRODUCAO_PARTITIONS || [])
             .filter(p => p && p.id && !p.id.includes('PREENCHER_') && !p.id.includes('COLE_AQUI'));
@@ -2296,7 +2143,6 @@ class AgriculturalDashboard {
                     return [];
                 }
 
-                // Normaliza datas ISO que o gviz pode retornar
                 const ISO_RE = /^\d{4}-\d{2}-\d{2}T/;
                 jsonData.forEach(row => {
                     for (const k of Object.keys(row)) {
@@ -2314,7 +2160,6 @@ class AgriculturalDashboard {
                     }
                 });
 
-                // Normaliza os dados de produção usando o IntelligentProcessor
                 const processed = await this.processor.processCSV(csvText, partition.key + '.csv');
                 if (processed && Array.isArray(processed.data) && processed.data.length > 0) {
                     console.log('[PRODUCAO] ' + partition.key + ': ' + processed.data.length + ' registros ✅');
@@ -2327,7 +2172,6 @@ class AgriculturalDashboard {
             }
         }));
 
-        // Consolida todos os meses em um array único
         const allRows = results.flat();
         console.log('[PRODUCAO] Total consolidado: ' + allRows.length + ' registros de ' + partitions.length + ' planilha(s)');
         return allRows;
@@ -2340,16 +2184,8 @@ class AgriculturalDashboard {
         } catch(e) {}
     }
 
-    // ── LEGADO: GAS API (mantido para compatibilidade, não é mais necessário para TPL) ──
-    /**
-     * Busca dados consolidados do Google Apps Script (TPL ou Producao shardados).
-     * O GAS retorna: { success: true, data: [ [header1, header2, ...], [val1, val2, ...], ... ] }
-     * @param {string} action - 'get_tpl' ou 'get_producao'
-     * @returns {Array} Array de arrays (primeira linha = cabeçalho)
-     */
     async _fetchGASConsolidated(action) {
         if (!this.GAS_API_URL || this.GAS_API_URL.trim() === '') {
-            // TPL agora é carregado via _fetchAllTplPartitions() — GAS não é mais necessário
             console.debug('[GAS] GAS_API_URL não configurado (não necessário — TPL usa gviz/CSV direto).');
             return [];
         }
@@ -2370,10 +2206,6 @@ class AgriculturalDashboard {
         }
     }
 
-    /**
-     * Converte o formato [[header,...], [val,...], ...] do GAS para [{header: val, ...}, ...]
-     * Formato compatível com o esperado pelo _parseTPLCSV e OEEAnalyzer.
-     */
     _convertGASArrayToObjects(gasData) {
         if (!gasData || gasData.length < 2) return [];
         const headers = gasData[0].map(h => String(h).trim());
@@ -2388,7 +2220,6 @@ class AgriculturalDashboard {
                 obj[h] = val !== null && val !== undefined ? String(val).trim() : '';
                 if (obj[h]) hasValue = true;
             });
-            // Valida que o registro tem pelo menos algum dado
             if (hasValue && (obj['COD. EQUIPAMENTO'] || obj['DIA BALANCA'] || Object.values(obj).some(v => v.length > 0))) {
                 result.push(obj);
             }
@@ -2396,15 +2227,10 @@ class AgriculturalDashboard {
         return result;
     }
 
-    /**
-     * Parseia CSV simples de disponibilidade (DispD1 / DispAcm).
-     * Colunas esperadas: Periodo Ini, Periodo Final, Equipamento, Descricao, Disp
-     */
     _parseDispCSV(csvText) {
         if (!csvText || typeof csvText !== 'string') return [];
         const lines = csvText.trim().split(/\r?\n/);
         if (lines.length < 2) return [];
-        // Remove aspas e split por vírgula (CSV simples)
         const parseRow = (line) => line.split(',').map(v => v.replace(/^"|"$/g, '').trim());
         const headers = parseRow(lines[0]);
         const result  = [];
@@ -2418,11 +2244,6 @@ class AgriculturalDashboard {
         return result;
     }
 
-    /**
-     * Parseia CSV do TPL (separador = ponto-e-vírgula).
-     * Retorna array de objetos com as colunas como chaves.
-     * Valida apenas que o campo COD. EQUIPAMENTO esteja presente.
-     */
     _parseTPLCSV(csvText) {
         if (!csvText || typeof csvText !== 'string') return [];
         const lines = csvText.trim().split(/\r?\n/);
@@ -2439,18 +2260,12 @@ class AgriculturalDashboard {
             headers.forEach((h, idx) => {
                 obj[h] = vals[idx] !== undefined ? vals[idx].replace(/^"|"$/g, '').trim() : '';
             });
-            // Só inclui registros com código de equipamento válido
             if (obj['COD. EQUIPAMENTO']) result.push(obj);
         }
 
         return result;
     }
 
-    /**
-     * Calcula o número de dias distintos na base de produção.
-     * Usa coluna 'data' mapeada pelo IntelligentProcessor.
-     * Mínimo: 1 (para não dividir por zero).
-     */
     _calcNDias(data) {
         if (!data || data.length === 0) return 1;
         const dias = new Set();
@@ -2464,7 +2279,6 @@ class AgriculturalDashboard {
     async fetchFilesFromCloud() {
         const cacheBuster = Date.now();
 
-        // ── URLs fixas (não dependem de GAS) ────────────────────────────────
         const googleSheetsUrls = {
             'Metas.xlsx':    `https://docs.google.com/spreadsheets/d/e/2PACX-1vQNEyAUSGlaGXiM2ph5B8ti0OEIBhbtTjE3qOcWhmtJAAatW3G6_HFkFu94oZApjofbDWyL3s7YSAVm/pub?output=csv&t=${cacheBuster}`,
             'Potencial.xlsx':`https://docs.google.com/spreadsheets/d/e/2PACX-1vRO00gvJ9bi5lAsVOvNO2E4jXPSyDzVnjCOAqFeG9mB_KAD8BtyGmPMd8bQIANyo_Fj_Ve3mGgqgejI/pub?output=csv&t=${cacheBuster}`,
@@ -2477,23 +2291,16 @@ class AgriculturalDashboard {
 
         const networkState = {
             data: [], potentialData: [], metaData: [], acmSafraData: [],
-            consumoD1Data: [], consumoAcmData: [], dispD1Data: [], dispAcmData: [], tplData: []
+            consumoD1Data: [], consumoAcmData: [], dispD1Data: [], dispAcmData: [], tplData: [],
+            camD1Data: [], camAcmData: []
         };
 
         let successCount = 0;
         let missingFiles = [];
 
-        // ── PASSO 1: CARREGAMENTO PROGRESSIVO EM 2 FASES ───────────────────
-        //
-        // FASE 1 (rápida ~3s): planilhas fixas + últimas 48h de produção
-        //   → dashboard já exibe dados reais enquanto a fase 2 roda em background
-        //
-        // FASE 2 (background): histórico completo via GAS cache
-        //   → atualiza a tela silenciosamente quando terminar
-
-        // ── FASE 0: Firestore (6 leituras, < 200ms) ─────────────────────────
         this._setLoadingMsg('Carregando dados em tempo real…', 10);
         const fsData = await this._fetchFirestoreRecente().catch(() => null);
+        
         if (fsData && fsData.producao && fsData.producao.length > 0) {
             networkState.data         = fsData.producao;
             if (fsData.acmSafra  && fsData.acmSafra.length  > 0) networkState.acmSafraData  = fsData.acmSafra;
@@ -2502,14 +2309,17 @@ class AgriculturalDashboard {
             if (fsData.colConD1  && fsData.colConD1.length  > 0) networkState.consumoD1Data  = fsData.colConD1;
             if (fsData.metas     && fsData.metas.length     > 0) networkState.metaData       = fsData.metas;
             if (fsData.tpl       && fsData.tpl.length       > 0) networkState.tplData        = fsData.tpl;
+            if (fsData.colCamAcm && fsData.colCamAcm.length > 0) networkState.camAcmData     = fsData.colCamAcm;
+            if (fsData.colCamD1  && fsData.colCamD1.length  > 0) networkState.camD1Data      = fsData.colCamD1;
             successCount++;
             console.log(`[Firestore] ✅ ${fsData.producao.length} registros — dashboard pronto`);
+            console.log(`[Firestore] ✅ CAM D1: ${fsData.colCamD1?.length || 0} registros`);
+            console.log(`[Firestore] ✅ CAM ACM: ${fsData.colCamAcm?.length || 0} registros`);
             this._setLoadingMsg('Dados carregados! Atualizando informações adicionais…', 40);
         } else {
             this._setLoadingMsg('Buscando dados recentes…', 15);
         }
 
-        // 1a. Planilhas fixas (Metas, Potencial, AcmSafra, Consumo, Disp) — em paralelo com fase 1
         const fetchFixasPromise = Promise.all(Object.entries(googleSheetsUrls).map(async ([name, url]) => {
             if (!url) return { name, success: false, skipped: true };
             try {
@@ -2524,10 +2334,9 @@ class AgriculturalDashboard {
             }
         }));
 
-        // 1b. FASE 1: últimas 48h via GAS (só roda se Firestore não trouxe dados)
         const gasRecentePromise = networkState.data.length === 0
             ? this._fetchGASRecente().catch(err => { console.warn('[GAS] Recente falhou:', err.message); return null; })
-            : Promise.resolve(null); // Firestore já trouxe dados — pula GAS
+            : Promise.resolve(null);
 
         const [downloadedFiles, gasRecenteRows] = await Promise.all([
             fetchFixasPromise,
@@ -2542,12 +2351,6 @@ class AgriculturalDashboard {
             console.log(`[GAS] Fase 1 ✅ — ${gasRecenteRows.length} registros recentes`);
         }
 
-        // gasProducaoRows e gasTplRows serão carregados em background (fase 2) após render
-        // — definidos como null aqui para o processamento abaixo não esperar
-        const gasProducaoRows = null;
-        const gasTplRows = null;
-
-        // ── PASSO 2: PROCESSAMENTO DAS PLANILHAS FIXAS ──────────────────────
         for (const file of downloadedFiles) {
             if (!file.success || file.skipped) continue;
             try {
@@ -2567,7 +2370,6 @@ class AgriculturalDashboard {
                     if (file.name.includes('DispAcm')) networkState.dispAcmData = dispJson;
                     if (dispJson.length > 0) successCount++;
                 } else {
-                    // Metas, Potencial
                     const result = await this.processor.processCSV(file.csvText, file.name);
                     if (result && Array.isArray(result.data) && result.data.length > 0) {
                         if (result.type === 'POTENTIAL') networkState.potentialData = result.data;
@@ -2587,20 +2389,6 @@ class AgriculturalDashboard {
         return { successCount, results: [], missingFiles, networkState };
     }
 
-    /**
-     * Busca dados de PRODUCAO consolidados via GAS v6.2 (action=get_producao).
-     * O GAS varre a pasta e consolida PRODUCAO_07_2025, PRODUCAO_08_2025, etc.
-     * Retorna array de objetos [{coluna: valor}, ...] prontos para o DataAnalyzer.
-     */
-    /**
-     * Faz requisição ao GAS v6.2 via JSONP para contornar CORS em localhost.
-     * Em produção (domínio próprio) o CORS do GAS funciona normalmente.
-     * JSONP funciona em qualquer origem sem necessidade de header CORS.
-     * @param {string} action - 'get_producao' ou 'get_tpl'
-     * @param {Object} extraParams - parâmetros adicionais (meses, safra)
-     * @param {number} timeout - timeout em ms (padrão: 60000)
-     * @returns {Promise<Object>} JSON retornado pelo GAS
-     */
     _fetchGASViaJSONP(action, extraParams = {}, timeout = 60000) {
         return new Promise((resolve, reject) => {
             const cbName = '_gasCallback_' + action.replace(/[^a-zA-Z0-9]/g, '_') + '_' + Date.now();
@@ -2643,35 +2431,16 @@ class AgriculturalDashboard {
         });
     }
 
-    /**
-     * Wrapper que tenta fetch CORS primeiro (produção), depois cai para JSONP (localhost/CORS bloqueado).
-     */
-    /**
-     * Executa uma chamada ao GAS com três tentativas em ordem:
-     * 1. fetch CORS normal (funciona em produção hospedada)
-     * 2. JSONP via <script> (funciona em localhost SE o GAS v6.3 estiver implantado)
-     * 3. Se ambos falharem, retorna null (dashboard vai para o modo sem dados do GAS)
-     *
-     * NOTA: Em localhost com GAS v6.2 (sem suporte JSONP), ambas as tentativas vão
-     * falhar — isso é esperado. Reimplante o GAS_Receptor_v6.3.js para resolver.
-     * Em produção (domínio próprio), apenas a tentativa 1 já funciona.
-     */
     async _fetchGAS(action, extraParams = {}) {
         if (!this.GAS_API_URL || !this.GAS_API_URL.trim()) return null;
 
         const params = new URLSearchParams({ action, t: Date.now(), ...extraParams });
         const url = `${this.GAS_API_URL}?${params}`;
 
-        // Tenta fetch CORS com redirect follow — funciona tanto em produção quanto
-        // no Live Server local quando o GAS v6.2+ está corretamente implantado.
-        // O GAS do Google envia Access-Control-Allow-Origin: * nas respostas JSON.
-        // Timeout generoso (90s) pois a 1ª carga pode ser lenta (GAS lendo planilhas).
         this._setLoadingMsg(
             action === 'get_producao' ? 'Buscando dados de produção…' : 'Buscando dados TPL…',
             action === 'get_producao' ? 25 : 45
         );
-        // Timeout de 120s: compatível com GAS v6.2/v6.3 (sem cache, pode levar 2min)
-        // Com GAS v6.5 implantado, responde em <2s após aquecimento.
         try {
             const ctrl = new AbortController();
             const tid  = setTimeout(() => ctrl.abort(), 120000);
@@ -2699,15 +2468,11 @@ class AgriculturalDashboard {
         return null;
     }
 
-    // ── FASE 0: Firestore — 6 leituras por sessão, < 200ms ──────────────
-    // Lê os 6 snapshots do Firestore em paralelo.
-    // Cada snapshot é 1 documento com todos os dados da tabela como JSON.
-    // Total: 6 leituras × 2000 usuários = 12.000 leituras/dia (limite 50.000).
     async _fetchFirestoreRecente() {
         try {
             const db = firebase.firestore();
-            // Lê todos os snapshots em paralelo — 7 leituras simultâneas
-            const [producaoDoc, acmSafraDoc, potencialDoc, colConAcmDoc, colConD1Doc, metasDoc, tplDoc] =
+            const [producaoDoc, acmSafraDoc, potencialDoc, colConAcmDoc, colConD1Doc, metasDoc, tplDoc,
+                   colCamAcmDoc, colCamD1Doc] =
                 await Promise.all([
                     db.collection('snapshots').doc('producao').get(),
                     db.collection('snapshots').doc('acmSafra').get(),
@@ -2716,9 +2481,10 @@ class AgriculturalDashboard {
                     db.collection('snapshots').doc('colConD1').get(),
                     db.collection('snapshots').doc('metas').get(),
                     db.collection('snapshots').doc('tpl').get(),
+                    db.collection('snapshots').doc('colCamAcm').get(),
+                    db.collection('snapshots').doc('colCamD1').get(),
                 ]);
 
-            // Helper: deserializa snapshot → array de objetos
             const parseSnapshot = (doc) => {
                 if (!doc.exists) return [];
                 try {
@@ -2730,7 +2496,6 @@ class AgriculturalDashboard {
                 } catch(e) { return []; }
             };
 
-            // Produção: processa pelo IntelligentProcessor para normalizar colunas
             const producaoRaw = parseSnapshot(producaoDoc);
             let producaoProcessada = [];
             if (producaoRaw.length > 0) {
@@ -2751,7 +2516,6 @@ class AgriculturalDashboard {
             }
 
             if (producaoProcessada.length === 0) {
-                // Tenta com dados brutos sem processamento (fallback)
                 if (producaoRaw && producaoRaw.length > 0) {
                     producaoProcessada = producaoRaw;
                     console.warn('[Firestore] Usando dados brutos (processCSV falhou).');
@@ -2764,15 +2528,11 @@ class AgriculturalDashboard {
             const age = producaoDoc.exists ? producaoDoc.data().updatedAt : '?';
             console.log(`[Firestore] ✅ ${producaoProcessada.length} registros de produção (atualizado: ${age})`);
 
-            // TPL: precisa manter as colunas ORIGINAIS (sem normalização pelo IntelligentProcessor)
-            // O OEEAnalyzer.aggregateTPL() espera as colunas brutas do Google Sheets
             let tplRows = [];
             if (tplDoc.exists) {
                 try {
                     const tplData = JSON.parse(tplDoc.data().payload || '{}');
                     if (tplData.cab && tplData.rows) {
-                        // Mapeia para objetos com os nomes de coluna originais
-                        // e aplica _normalizeTplRow para garantir compatibilidade com OEEAnalyzer
                         tplRows = tplData.rows.map(row => {
                             const obj = {};
                             tplData.cab.forEach((col, i) => { obj[col] = row[i] ?? ''; });
@@ -2785,7 +2545,21 @@ class AgriculturalDashboard {
                 console.info('[Firestore] TPL não populado — execute migrarTPL() no GAS.');
             }
 
-            // Retorna objeto com todos os dados para o _applyState
+            const colCamD1Raw = parseSnapshot(colCamD1Doc);
+            const colCamAcmRaw = parseSnapshot(colCamAcmDoc);
+            
+            console.log(`[Firestore] 🔍 CAM D1: existe=${colCamD1Doc.exists} | registros=${colCamD1Raw.length}`);
+            console.log(`[Firestore] 🔍 CAM ACM: existe=${colCamAcmDoc.exists} | registros=${colCamAcmRaw.length}`);
+            
+            if (colCamD1Raw.length > 0) {
+                console.log('[Firestore] 🔍 CAM D1 - amostra de colunas:', Object.keys(colCamD1Raw[0]).slice(0, 8));
+                console.log('[Firestore] 🔍 CAM D1 - primeira linha:', JSON.stringify(colCamD1Raw[0]).slice(0, 300));
+            }
+            if (colCamAcmRaw.length > 0) {
+                console.log('[Firestore] 🔍 CAM ACM - amostra de colunas:', Object.keys(colCamAcmRaw[0]).slice(0, 8));
+                console.log('[Firestore] 🔍 CAM ACM - primeira linha:', JSON.stringify(colCamAcmRaw[0]).slice(0, 300));
+            }
+
             return {
                 producao:   producaoProcessada,
                 acmSafra:   parseSnapshot(acmSafraDoc),
@@ -2794,6 +2568,8 @@ class AgriculturalDashboard {
                 colConD1:   parseSnapshot(colConD1Doc),
                 metas:      parseSnapshot(metasDoc),
                 tpl:        tplRows,
+                colCamAcm:  colCamAcmRaw,
+                colCamD1:   colCamD1Raw,
             };
         } catch(e) {
             console.warn('[Firestore] Leitura falhou:', e.message);
@@ -2801,18 +2577,14 @@ class AgriculturalDashboard {
         }
     }
 
-        // ── FASE 1: busca rápida das últimas 48h ─────────────────────────────
-    // Tenta GAS v6.5 com timeout de 8s.
-    // Se GAS demorar, cai para leitura direta via gviz (PRODUCAO_PARTITIONS).
     async _fetchGASRecente() {
-        // Tentativa 1: GAS v6.5 (rápido se cache quente)
         if (this.GAS_API_URL && this.GAS_API_URL.trim()) {
             try {
                 console.log('[GAS] Fase 1 — buscando dados recentes (48h)...');
                 const params = new URLSearchParams({ action: 'get_recente', horas: 48, t: Date.now() });
                 const url = `${this.GAS_API_URL}?${params}`;
                 const ctrl = new AbortController();
-                const tid  = setTimeout(() => ctrl.abort(), 8000); // 8s — se o cache estiver quente é suficiente
+                const tid  = setTimeout(() => ctrl.abort(), 8000);
                 const resp = await fetch(url, { signal: ctrl.signal });
                 clearTimeout(tid);
                 if (resp.ok) {
@@ -2833,12 +2605,10 @@ class AgriculturalDashboard {
             }
         }
 
-        // Tentativa 2: leitura direta via gviz (não depende do GAS)
         const partitions = (this.PRODUCAO_PARTITIONS || [])
             .filter(p => p && p.id && !p.id.includes('COLE_'));
         if (partitions.length > 0) {
             console.log('[PRODUCAO] Fallback gviz — lendo planilha mais recente...');
-            // Pega só a última partição (mais recente)
             const last = partitions[partitions.length - 1];
             try {
                 const url = this._gvizUrl(last.id);
@@ -2860,7 +2630,7 @@ class AgriculturalDashboard {
         return null;
     }
 
-        async _fetchGASProducao() {
+    async _fetchGASProducao() {
         if (!this.GAS_API_URL || !this.GAS_API_URL.trim()) {
             console.warn('[GAS] GAS_API_URL não configurado — Produção não carregada.');
             return [];
@@ -2931,10 +2701,6 @@ class AgriculturalDashboard {
         return tplRows;
     }
 
-    /**
-     * Converte array de objetos para CSV temporário para o IntelligentProcessor.
-     * Usado apenas internamente pelo _fetchGASProducao.
-     */
     _gasObjectsToCSV(objects) {
         if (!objects || objects.length === 0) return '';
         const headers = Object.keys(objects[0]);
@@ -2948,17 +2714,11 @@ class AgriculturalDashboard {
         });
         return lines.join('\n');
     }
-    /**
-     * Valida se o estado do cache é confiável.
-     * Detecta o bug do parser que gerava valores > 100.000 t no peso do dia.
-     * @param {Object} state
-     * @returns {boolean} true se ok, false se corrompido
-     */
+
     _validateCachedData(state) {
         if (!state) return false;
         if (!state.data || state.data.length === 0) return true;
 
-        // Parser BR blindado — mesmo padrão do resto do sistema
         const _toNum = (v) => {
             if (typeof v === 'number') return isNaN(v) ? 0 : v;
             if (!v) return 0;
@@ -2969,7 +2729,6 @@ class AgriculturalDashboard {
             return isNaN(n) ? 0 : n;
         };
 
-        // Soma amostra de até 200 linhas
         let totalPeso = 0;
         const sample = state.data.slice(0, Math.min(state.data.length, 200));
         for (const row of sample) {
@@ -2977,7 +2736,6 @@ class AgriculturalDashboard {
             totalPeso += _toNum(v);
         }
 
-        // Amostra de 200 linhas não deve passar de 100.000 t (seria ~500t/linha em média)
         if (totalPeso > 100000) {
             console.warn('[IDB] Peso acumulado na amostra:', totalPeso, '— cache com dados suspeitos, descartando.');
             return false;
@@ -2985,7 +2743,6 @@ class AgriculturalDashboard {
         return true;
     }
 
-    // Aplica estado (do IDB ou da rede) nas propriedades da instância
     _applyState(state) {
         this.data           = state.data           || [];
         this.potentialData  = state.potentialData  || [];
@@ -2996,16 +2753,17 @@ class AgriculturalDashboard {
         this.dispD1Data     = state.dispD1Data     || [];
         this.dispAcmData    = state.dispAcmData    || [];
         this.tplData        = state.tplData        || [];
+        this.camD1Data      = state.camD1Data      || [];
+        this.camAcmData     = state.camAcmData     || [];
     }
 
-    // Zera todos os arrays de estado
     _resetState() {
         this.data = []; this.potentialData = []; this.metaData = [];
         this.acmSafraData = []; this.consumoD1Data = []; this.consumoAcmData = [];
         this.dispD1Data = []; this.dispAcmData = []; this.tplData = [];
+        this.camD1Data = []; this.camAcmData = [];
     }
 
-    // Calcula próximo horário alvo HH:00 ou HH:30
     _calcNextRefreshTarget() {
         const now = new Date();
         const t   = new Date(now);
@@ -3015,7 +2773,6 @@ class AgriculturalDashboard {
         return t;
     }
 
-    // Atualiza badge #fileInfo
     _updateFileInfoBadge(justUpdated) {
         const el = document.getElementById('fileInfo');
         if (!el) return;
@@ -3028,13 +2785,13 @@ class AgriculturalDashboard {
         if (this.dispD1Data.length)     parts.push('DispD1');
         if (this.dispAcmData.length)    parts.push('DispAcm');
         if (this.tplData.length)        parts.push('TPL (OEE)');
+        if (this.camD1Data.length)      parts.push('Cam D1');
+        if (this.camAcmData.length)     parts.push('Cam ACM');
         el.textContent = 'Arquivos carregados: ' + parts.join(' + ') + '.' + (justUpdated ? ' ✅ Atualizado' : ' (Via Google Sheets)');
         el.style.color = 'var(--success)';
     }
 
-    // Banner sutil de sincronização no canto inferior direito
     _showSyncBanner(msg) {
-        // Compact dot indicator — message visible only on hover
         if (!msg) msg = 'Sincronizando…';
         let b = document.getElementById('_agro-sync-banner');
         if (!b) {
@@ -3073,7 +2830,6 @@ class AgriculturalDashboard {
         requestAnimationFrame(function() { b.style.opacity = '1'; });
     }
 
-    // Oculta o banner com fade-out
     _hideSyncBanner() {
         var b = document.getElementById('_agro-sync-banner');
         if (!b) return;
@@ -3081,6 +2837,7 @@ class AgriculturalDashboard {
         setTimeout(function() { b.style.display = 'none'; }, 500);
         setTimeout(function() { b.style.display = ''; }, 600);
     }
+
     async handleFileUpload(event) {
         this.showLoadingAnimation(); 
         const files = Array.from(event.target.files);
@@ -3088,10 +2845,9 @@ class AgriculturalDashboard {
         this._resetState();
         this.clearResults(); 
         this.stopCarousel();
-        // Limpa IDB ao fazer upload manual para evitar mistura de dados
         this.localDB.saveAllTables({
             data:[], potentialData:[], metaData:[], acmSafraData:[],
-            consumoD1Data:[], consumoAcmData:[], dispD1Data:[], dispAcmData:[], tplData:[]
+            consumoD1Data:[], consumoAcmData:[], dispD1Data:[], dispAcmData:[], tplData:[], camD1Data:[], camAcmData:[]
         }).catch(function() {});
         this.startLoadingProcess(); 
     }
@@ -3100,13 +2856,12 @@ class AgriculturalDashboard {
         if (this._syncing) return;
         this._syncing = true;
 
-        // Limpa IDB se a versão do app mudou (evita dados corrompidos entre versões)
         const cachedVersion = await this.localDB.getMeta('appVersion').catch(() => null);
         if (cachedVersion && cachedVersion !== this._APP_VERSION) {
             console.warn('[IDB] Versão do app mudou (' + cachedVersion + ' → ' + this._APP_VERSION + ') — limpando cache.');
             await this.localDB.saveAllTables({
                 data:[], potentialData:[], metaData:[], acmSafraData:[],
-                consumoD1Data:[], consumoAcmData:[], dispD1Data:[], dispAcmData:[], tplData:[]
+                consumoD1Data:[], consumoAcmData:[], dispD1Data:[], dispAcmData:[], tplData:[], camD1Data:[], camAcmData:[]
             }).catch(() => {});
         }
         await this.localDB.setMeta('appVersion', this._APP_VERSION).catch(() => {});
@@ -3114,32 +2869,25 @@ class AgriculturalDashboard {
         const hasCached = await this.localDB.hasData();
 
         if (hasCached) {
-            // ── CAMINHO RÁPIDO: dados em cache, renderiza imediatamente ──
             this.showLoadingAnimation('Carregando cache local…');
             this._setLoadingMsg('Carregando cache local…', 10);
             try {
                 const cachedState = await this.localDB.loadAllTables();
 
-                // ── VALIDAÇÃO DO CACHE ───────────────────────────────────
-                // Se producao tiver valores de peso acima de 100k (bug do parser antigo),
-                // descarta o cache corrompido e faz um full load limpo.
                 const cacheOk = this._validateCachedData(cachedState);
                 if (!cacheOk) {
                     console.warn('[IDB] Cache com dados inválidos detectado — descartando e recarregando da fonte.');
                     await this.localDB.saveAllTables({
                         data:[], potentialData:[], metaData:[], acmSafraData:[],
-                        consumoD1Data:[], consumoAcmData:[], dispD1Data:[], dispAcmData:[], tplData:[]
+                        consumoD1Data:[], consumoAcmData:[], dispD1Data:[], dispAcmData:[], tplData:[], camD1Data:[], camAcmData:[]
                     });
                     this._syncing = false;
                     await this._fullLoadAndRender();
                     return;
                 }
-                // ────────────────────────────────────────────────────────
 
                 this._applyState(cachedState);
 
-                // Se o cache não tem TPL mas há partições configuradas,
-                // carrega o TPL agora (não espera o background sync)
                 if ((!this.tplData || this.tplData.length === 0) &&
                     this.TPL_PARTITIONS && this.TPL_PARTITIONS.some(p => p.id && !p.id.includes('COLE_AQUI'))) {
                     console.log('[TPL] Cache sem TPL — buscando partições configuradas...');
@@ -3148,7 +2896,6 @@ class AgriculturalDashboard {
                             if (rows && rows.length > 0) {
                                 this.tplData = rows;
                                 console.log('[TPL] ' + rows.length + ' registros carregados em segundo plano ✅');
-                                // Re-executa análise OEE com o TPL agora disponível
                                 if (this.analysisResult) this._runOEEAnalysis();
                             }
                         })
@@ -3168,26 +2915,22 @@ class AgriculturalDashboard {
             this.updateDashboardWithCorrectedValues();
             this._updateFileInfoBadge(false);
 
-            // Banner de sync em fundo
             const ageMs  = await this.localDB.getLastSyncAge();
             const ageMin = ageMs ? Math.round(ageMs / 60000) : null;
             this._showSyncBanner(ageMin !== null
                 ? 'Sincronizando dados (última atualização: ' + ageMin + ' min atrás)…'
                 : 'Sincronizando dados mais recentes em segundo plano…');
 
-            // Sync em fundo — não bloqueia a UI
             this._backgroundSync().finally(() => {
                 this._syncing = false;
                 this._hideSyncBanner();
             });
         } else {
-            // ── PRIMEIRA VEZ: sem cache, loading completo ──
             await this._fullLoadAndRender();
             this._syncing = false;
         }
     }
 
-    // Fluxo de primeiro carregamento (sem cache)
     async _fullLoadAndRender() {
         this.showLoadingAnimation('Conectando ao servidor de dados…');
         this._setLoadingMsg('Primeiro acesso — configurando tudo para você. Aguarde...', 10);
@@ -3206,7 +2949,6 @@ class AgriculturalDashboard {
         }
         this._applyState(ns);
         this._updateFileInfoBadge(false);
-        // Salva fase 1 no IDB imediatamente
         this.localDB.saveAllTables(ns)
             .then(() => console.log('[IDB] Fase 1 persistida.'))
             .catch(e => console.warn('[IDB] Erro ao persistir:', e));
@@ -3216,21 +2958,12 @@ class AgriculturalDashboard {
         this.updateDashboardWithCorrectedValues();
         document.dispatchEvent(new CustomEvent('agroanalytics:dataUpdated'));
 
-        // ── FASE 2: histórico completo em background ──────────────────────
         this._carregarHistoricoBackground();
-        // Aquece o cache do GAS em paralelo para garantir que próximas visitas
-        // sejam rápidas (só executa uma vez por sessão)
         if (!this._gasAquecido) {
             this._gasAquecido = true;
             this._aquecerGASBackground();
         }
     }
-
-    // Aquece o cache do GAS disparando get_recente com force=true em background
-    // Chamado automaticamente na primeira carga para preparar o cache para próximas visitas
-    // ──────────────────────────────────────────────────────────────
-    // OFFLINE-FIRST: Mensagem de primeiro acesso + exportação JSON
-    // ──────────────────────────────────────────────────────────────
 
     _mostrarBannerPrimeiroAcesso(show) {
         let el = document.getElementById('_banner-primeiro-acesso');
@@ -3310,11 +3043,6 @@ class AgriculturalDashboard {
         document.body.appendChild(banner);
     }
 
-    /**
-     * Exporta um snapshot JSON dos dados atuais para download no dispositivo.
-     * Este JSON é carregado automaticamente no próximo acesso se não houver
-     * conexão com o Firebase/GAS — funciona como cache offline.
-     */
     exportarSnapshotJSON() {
         try {
             const snapshot = {
@@ -3330,6 +3058,8 @@ class AgriculturalDashboard {
                 dispD1Data:    this.dispD1Data    || [],
                 dispAcmData:   this.dispAcmData   || [],
                 tplData:       this.tplData       || [],
+                camD1Data:     this.camD1Data     || [],
+                camAcmData:    this.camAcmData    || [],
             };
             const json = JSON.stringify(snapshot);
             const blob = new Blob([json], { type: 'application/json' });
@@ -3350,10 +3080,6 @@ class AgriculturalDashboard {
         }
     }
 
-    /**
-     * Importa um snapshot JSON previamente exportado.
-     * Carrega os dados no IDB e renderiza o dashboard.
-     */
     async importarSnapshotJSON(file) {
         try {
             const text = await file.text();
@@ -3369,6 +3095,8 @@ class AgriculturalDashboard {
                 dispD1Data:    snap.dispD1Data    || [],
                 dispAcmData:   snap.dispAcmData   || [],
                 tplData:       snap.tplData       || [],
+                camD1Data:     snap.camD1Data     || [],
+                camAcmData:    snap.camAcmData    || [],
             };
             this._applyState(state);
             await this.localDB.saveAllTables(state).catch(() => {});
@@ -3387,13 +3115,12 @@ class AgriculturalDashboard {
         try {
             const url = `${this.GAS_API_URL}?action=get_recente&force=true&t=${Date.now()}`;
             const ctrl = new AbortController();
-            setTimeout(() => ctrl.abort(), 180000); // 3min — sem urgência
+            setTimeout(() => ctrl.abort(), 180000);
             await fetch(url, { signal: ctrl.signal });
             console.log('[GAS] Cache de recentes aquecido ✅');
-        } catch(e) { /* silencioso — não é crítico */ }
+        } catch(e) { }
     }
 
-    // Carrega o histórico completo em background após o dashboard estar visível
     async _carregarHistoricoBackground() {
         try {
             this._showSyncBanner('Carregando histórico completo em background…');
@@ -3413,11 +3140,9 @@ class AgriculturalDashboard {
                 return;
             }
 
-            // Atualiza estado com dados completos
             if (gasProducaoRows && gasProducaoRows.length > 0) this.data     = gasProducaoRows;
             if (gasTplRows      && gasTplRows.length      > 0) this.tplData  = gasTplRows;
 
-            // Salva no IDB
             const nsCompleto = {
                 data:          this.data          || [],
                 potentialData: this.potentialData || [],
@@ -3428,12 +3153,13 @@ class AgriculturalDashboard {
                 dispD1Data:    this.dispD1Data    || [],
                 dispAcmData:   this.dispAcmData   || [],
                 tplData:       this.tplData       || [],
+                camD1Data:     this.camD1Data     || [],
+                camAcmData:    this.camAcmData    || [],
             };
             this.localDB.saveAllTables(nsCompleto)
                 .then(() => console.log('[IDB] Histórico completo persistido ✅'))
                 .catch(e => console.warn('[IDB] Erro ao persistir histórico:', e));
 
-            // Re-renderiza com dados completos (sem mostrar loading)
             console.log('[GAS] Fase 2 ✅ — re-renderizando com histórico completo...');
             const targetTime = this._calcNextRefreshTarget();
             await this.processDataAsync(this.data, this.potentialData, this.metaData, targetTime);
@@ -3446,7 +3172,6 @@ class AgriculturalDashboard {
         }
     }
 
-    // Sincronização silenciosa em segundo plano (stale-while-revalidate)
     async _backgroundSync() {
         try {
             console.log('[Sync] Sincronização em segundo plano iniciada…');
@@ -3460,7 +3185,6 @@ class AgriculturalDashboard {
             const hasChange = ns.data.length !== cachedLen;
             await this.localDB.saveAllTables(ns);
             console.log('[Sync] Cache atualizado: ' + cachedLen + ' → ' + ns.data.length + ' registros.');
-            // Se o TPL foi carregado desta vez mas não estava antes, re-analisa OEE
             const tplWasEmpty = !this.tplData || this.tplData.length === 0;
             const tplNowLoaded = ns.tplData && ns.tplData.length > 0;
 
@@ -3475,7 +3199,6 @@ class AgriculturalDashboard {
                 this.updateDashboardWithCorrectedValues();
                 this._updateFileInfoBadge(true);
             } else if (tplNowLoaded && this.analysisResult) {
-                // Dados de produção inalterados mas TPL chegou — re-analisa só o OEE
                 this.tplData = ns.tplData;
                 this._runOEEAnalysis();
                 console.log('[TPL] OEE re-calculado com TPL carregado ✅');
@@ -3567,26 +3290,22 @@ class AgriculturalDashboard {
          
         window.addEventListener('resize', () => { if (window.innerWidth > 768) this.toggleMenu(true); });
 
-        // ── SIDEBAR HOVER: push main content right smoothly ─────────────────
-        // position:fixed sidebars can't use CSS ~ sibling selector, so use JS
         (function setupSidebarHoverPush() {
             const nav  = document.getElementById('tabs-nav-container');
             const body = document.body;
             if (!nav) return;
             let hoverTimer = null;
             nav.addEventListener('mouseenter', () => {
-                if (window.innerWidth <= 768) return; // mobile: skip
+                if (window.innerWidth <= 768) return;
                 clearTimeout(hoverTimer);
                 body.classList.add('nav-expanded');
             });
             nav.addEventListener('mouseleave', () => {
                 if (window.innerWidth <= 768) return;
-                // Small delay so content doesn't snap before animation finishes
                 hoverTimer = setTimeout(() => body.classList.remove('nav-expanded'), 50);
             });
         })();
 
-        // Garante que o backdrop nunca fique visível em estado residual
         setInterval(() => {
             const bd = document.getElementById('menu-backdrop');
             const mn = document.getElementById('tabs-nav-container');
@@ -3620,64 +3339,45 @@ class AgriculturalDashboard {
         const currentTheme = document.documentElement.getAttribute('data-theme');
         const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
 
-        // Troca o atributo CSS e o ícone
         document.documentElement.setAttribute('data-theme', newTheme);
         localStorage.setItem('theme', newTheme);
 
         const icon = document.getElementById('theme-icon');
         if (icon) icon.className = newTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
 
-        // Repinta gráficos Chart.js com as novas cores (sem recriar)
         this._updateChartsTheme(newTheme);
 
-        // ── RE-APLICA OS VALORES KPI APÓS TROCA DE TEMA ────────────────────
-        // O DataVisualizer pode recriar o VisualizerKPIs internamente ao detectar
-        // mudança de tema (via getThemeConfig). Para garantir que os valores
-        // corretos apareçam, re-passamos o analysisResult já calculado para os
-        // módulos que gerenciam os cards — sem buscar dados novamente.
-        // Troca tema visual via CSS — não re-busca dados, não recria DOM.
         if (this.analysisResult) {
             setTimeout(() => {
                 try {
-                    // 1. Injeta acumuladoDia ANTES de chamar qualquer módulo
                     const acumuladoReal = this.calculateRealAccumulated();
                     this.analysisResult.acumuladoDia    = acumuladoReal;
                     this.analysisResult.acumuladoRealDia = acumuladoReal;
 
-                    // 2. Repinta cores dos gráficos Chart.js
                     if (this.visualizer && typeof this.visualizer.updateTheme === 'function') {
                         this.visualizer.updateTheme();
                     }
-                    // 3. Re-aplica KPIs do InformativoOperacional
                     if (this.visualizer && this.visualizer.kpisRenderer) {
                         this.visualizer.kpisRenderer.updateHeaderStats(this.analysisResult);
                         this.visualizer.kpisRenderer.updateTopLists(this.analysisResult);
                     }
-                    // 4. Módulos modulares de Moagem (já têm acumuladoDia injetado)
                     if (window.AcumuladoEProgresso) window.AcumuladoEProgresso.update(this.analysisResult);
                     if (window.ProjecaoDeMoagem)    window.ProjecaoDeMoagem.update(this.analysisResult);
-                    // 5. Recalcula valores corrigidos por último (sobrescreve qualquer residual)
                     this.updateDashboardWithCorrectedValues();
-                } catch(e) { /* Não crítico — o tema visual já mudou via CSS */ }
+                } catch(e) { }
             }, 50);
         }
     }
 
-    /**
-     * Repinta os gráficos Chart.js com as cores do novo tema,
-     * sem recriar nenhum componente nem re-buscar dados.
-     */
     _updateChartsTheme(theme) {
         try {
             if (!this.visualizer || !this.visualizer.charts) return;
             Object.values(this.visualizer.charts).forEach(chart => {
                 if (chart && typeof chart.update === 'function') {
-                    chart.update('none'); // 'none' = sem animação, só repinta
+                    chart.update('none');
                 }
             });
-        } catch (e) {
-            // Não crítico — o tema visual já mudou via CSS
-        }
+        } catch (e) { }
     }
 
     initializeParticles() {
@@ -3748,17 +3448,12 @@ class AgriculturalDashboard {
         this.animationFrameId = requestAnimationFrame(animate); 
     }
     
-    /**
-     * Limpa o IndexedDB e recarrega todos os dados da fonte.
-     * Acessível via window.dashboard.clearCache() no console,
-     * ou pelo botão na aba Gerenciar.
-     */
     async clearCache() {
         if (!confirm('Isso vai apagar o cache local e recarregar todos os dados da fonte. Continuar?')) return;
         try {
             await this.localDB.saveAllTables({
                 data:[], potentialData:[], metaData:[], acmSafraData:[],
-                consumoD1Data:[], consumoAcmData:[], dispD1Data:[], dispAcmData:[], tplData:[]
+                consumoD1Data:[], consumoAcmData:[], dispD1Data:[], dispAcmData:[], tplData:[], camD1Data:[], camAcmData:[]
             });
             this._resetState();
             this._syncing = false;
@@ -3837,7 +3532,6 @@ class AgriculturalDashboard {
         }
     }
 
-    // 🔥 TRAVA DE SEGURANÇA: Se a div de alertas não existir, a tela não quebra
     renderAlerts(anomalies) {
         const alertsContainer = document.getElementById('alertsContainer');
         if (!alertsContainer) return;
@@ -3896,20 +3590,16 @@ class AgriculturalDashboard {
             {
                 id: 'colheita', label: 'Colheita', icon: 'fas fa-tractor', labelCls: 'nav-group-label--harvest',
                 tabs: [
-                    { id: 'tab-moagem',                 icon: 'fas fa-industry',       title: 'Moagem'      },
-                    { id: 'tab-equipamento',            icon: 'fas fa-tractor',        title: 'Colhedoras'  },
-                    { id: 'tab-consumo',                icon: 'fas fa-gas-pump',       title: 'Consumo'     },
-                    { id: 'tab-oee-colhedoras',         icon: 'fas fa-chart-bar',      title: 'OEE Colh.',  oee: true, badge: 'OEE' },
-                    { id: 'tab-eficiencia-operacional', icon: 'fas fa-tachometer-alt', title: 'Eficiência', oee: true, badge: 'OEE' },
+                    { id: 'tab-moagem',      icon: 'fas fa-industry',  title: 'Moagem'      },
+                    { id: 'tab-equipamento', icon: 'fas fa-tractor',   title: 'Colhedoras'  },
+                    { id: 'tab-consumo',     icon: 'fas fa-gas-pump',  title: 'Consumo'     },
+                    { id: 'tab-consumo-cam', icon: 'fas fa-truck',     title: 'Consumo Cam' },
                 ]
             },
             {
                 id: 'caminhoes', label: 'Caminhões', icon: 'fas fa-truck', labelCls: 'nav-group-label--truck',
                 tabs: [
-                    { id: 'tab-caminhao',        icon: 'fas fa-truck',               title: 'Caminhões'   },
-                    { id: 'tab-oee-caminhoes',   icon: 'fas fa-chart-bar',           title: 'OEE Cam.',   oee: true, badge: 'OEE' },
-                    { id: 'tab-comparativo-oee', icon: 'fas fa-balance-scale',       title: 'Comparativo',oee: true, badge: 'OEE' },
-                    { id: 'tab-gargalos',        icon: 'fas fa-exclamation-triangle', title: 'Gargalos',  oee: true, badge: '!', badgeWarn: true },
+                    { id: 'tab-caminhao', icon: 'fas fa-truck', title: 'Caminhões' },
                 ]
             },
             {
@@ -3951,7 +3641,6 @@ class AgriculturalDashboard {
                        placeholder="Buscar aba…" oninput="window._navSearch(this.value)">
             </div>${html}`;
 
-        // Re-apply active state
         const activePane = document.querySelector('.tab-pane.active');
         if (activePane) {
             const btn = container.querySelector(`[data-tab="${activePane.id}"]`);
@@ -4015,25 +3704,29 @@ class AgriculturalDashboard {
                 try {
                     const item = new ClipboardItem({ "image/png": blob });
                     await navigator.clipboard.write([item]);
-                    alert("Captura copiada para a área de transferência!");
-                } catch (e) {
-                    const link = document.createElement('a');
-                    const now = new Date();
-                    const timestamp = now.toLocaleDateString('pt-BR').replace(/\//g, '-') + 
-                                     '_' + now.toLocaleTimeString('pt-BR').replace(/:/g, '-');
                     
-                    let elementName = 'dashboard';
-                    if (activeTab.id) {
-                        elementName = activeTab.id.replace('tab-', '').toUpperCase();
+                    // Visual feedback no botão em vez de alert()
+                    if (exportBtn) {
+                        exportBtn.innerHTML = '<i class="fas fa-check"></i> Copiado!';
+                        exportBtn.style.background = 'linear-gradient(135deg,#22c55e,#16a34a)';
+                        setTimeout(() => {
+                            exportBtn.style.background = '';
+                            exportBtn.innerHTML = originalBtnText || '<i class="fas fa-camera"></i> Ações';
+                            exportBtn.disabled = false;
+                        }, 2200);
                     }
-                    
-                    link.download = `DASHBOARD_${elementName}_${timestamp}.png`;
-                    link.href = URL.createObjectURL(blob);
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    URL.revokeObjectURL(link.href);
-                    alert("Captura salva com sucesso!");
+                } catch (e) {
+                    // Clipboard bloqueado (HTTP ou permissão negada)
+                    if (exportBtn) {
+                        exportBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Permissão negada';
+                        exportBtn.style.background = 'linear-gradient(135deg,#f59e0b,#d97706)';
+                        setTimeout(() => {
+                            exportBtn.style.background = '';
+                            exportBtn.innerHTML = originalBtnText || '<i class="fas fa-camera"></i> Ações';
+                            exportBtn.disabled = false;
+                        }, 3000);
+                    }
+                    console.warn('Clipboard bloqueado. Use HTTPS ou permita "clipboard-write" no navegador.', e);
                 }
             }, 'image/png');
 
@@ -4045,7 +3738,8 @@ class AgriculturalDashboard {
             toHide.forEach((el, index) => {
                 if(el) el.style.display = originalDisplay[index];
             });
-            if (exportBtn) {
+            // O botão é restaurado pelo sucesso/erro com delay — aqui só libera se ainda bloqueado por erro grave
+            if (exportBtn && exportBtn.disabled && exportBtn.innerHTML.includes('Processando')) {
                 exportBtn.innerHTML = originalBtnText || '<i class="fas fa-camera"></i> Ações';
                 exportBtn.disabled = false;
             }
@@ -4053,24 +3747,6 @@ class AgriculturalDashboard {
     }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
-// LINHA DO TEMPO HxH — renderiza na aba tab-horaria desde 06:00
-// Chamada após processDataAsync() e também quando a aba é aberta
-// ══════════════════════════════════════════════════════════════════════════
-// LINHA DO TEMPO HxH — Scrubber horizontal arrastável
-// • Régua horizontal: 06:00 → 05:59 (ciclo agrícola 24h)
-// • Bolinha arrastável (range input) mostra detalhes da hora selecionada
-// • Parte da hora atual com dados; horas futuras desabilitadas
-// ══════════════════════════════════════════════════════════════════════════
-// ⚠️⚠️⚠️ NUNCA ALTERAR ESTA FUNÇÃO SEM ORDEM EXPLÍCITA ⚠️⚠️⚠️
-// A Linha do Tempo HxH (scrubber + KPIs + segmentos) está PERFEITA.
-// Qualquer mudança requer aprovação explícita do usuário.
-// Versão aprovada em 21/03/2026 — estilo v3 restaurado.
-// ╔══════════════════════════════════════════════════════════════════╗
-// ║  ⚠️  LINHA DO TEMPO HXH — ESTILO APROVADO — NÃO ALTERAR       ║
-// ║  Qualquer modificação requer ordem explícita do dono do projeto ║
-// ║  Aprovado em: 21/03/2026 — v6.9.3                              ║
-// ╚══════════════════════════════════════════════════════════════════╝
 AgriculturalDashboard.prototype.renderHxHTimeline = function() {
     const container = document.getElementById('hxh-timeline-container');
     if (!container) return;
@@ -4085,24 +3761,20 @@ AgriculturalDashboard.prototype.renderHxHTimeline = function() {
         return;
     }
 
-    const buckets = analysis.analise24h; // 24 buckets: idx 0=06:00 … idx 23=05:00
+    const buckets = analysis.analise24h;
     const now = new Date();
     const currentHour = now.getHours();
     const currentIdx  = currentHour >= 6 ? currentHour - 6 : currentHour + 18;
 
-    // Primeiro bucket com dados reais (para início do arrasto)
     let firstDataIdx = buckets.findIndex(b => (b.peso || 0) > 0);
     if (firstDataIdx < 0) firstDataIdx = 0;
 
     const totalPeso    = buckets.reduce((s, b) => s + (b.peso || 0), 0);
     const totalViagens = buckets.reduce((s, b) => s + (b.viagens || 0), 0);
-    // Para dados consolidados: conta horas com peso até o bucket atual
-    const horasComDados= buckets.filter((b, i) => i <= currentIdx && (b.peso || 0) > 0).length || 1;
-    // Ritmo real: total acumulado / horas efetivas com dados
-    const ritmo        = horasComDados > 0 ? totalPeso / horasComDados : 0;
-    // Projeção: para dados já consolidados (dia fechado), projeção = total acumulado (não extrapolar)
     const totalBucketsComDados = buckets.filter(b => (b.peso || 0) > 0).length;
-    const isDiaConsolidado = totalBucketsComDados >= 20; // 20+ buckets preenchidos = dia consolidado
+    const horasComDados = totalBucketsComDados || 1;
+    const ritmo = horasComDados > 0 ? totalPeso / horasComDados : 0;
+    const isDiaConsolidado = totalBucketsComDados >= 16;
     const projecao = isDiaConsolidado ? totalPeso : ritmo * 24;
     const meta         = parseFloat(localStorage.getItem('metaMoagem') || '18500');
     const maxPeso      = Math.max(...buckets.map(b => b.peso || 0), 1);
@@ -4111,7 +3783,6 @@ AgriculturalDashboard.prototype.renderHxHTimeline = function() {
         ? n.toLocaleString('pt-BR', {minimumFractionDigits:dec, maximumFractionDigits:dec})
         : '—';
 
-    // ── KPIs do cabeçalho ──────────────────────────────────────
     const projCls  = projecao >= meta ? '#10b981' : '#3b82f6';
     const metaCls  = totalPeso >= meta ? '#10b981' : '#f59e0b';
     const dayLabel = (() => {
@@ -4120,7 +3791,6 @@ AgriculturalDashboard.prototype.renderHxHTimeline = function() {
         return `Dia agrícola: ${d2} 06:00 → ${d1} 05:59`;
     })();
 
-    // ── Gera marcas da régua (labels a cada 3h + início/fim) ───
     const TOTAL = 24;
     const horaLabel = idx => {
         const h = (idx + 6) % 24;
@@ -4136,7 +3806,6 @@ AgriculturalDashboard.prototype.renderHxHTimeline = function() {
                 </div>`;
     }).join('');
 
-    // ── Barra de progresso colorida por segmento ───────────────
     const segmentsHtml = buckets.map((b, idx) => {
         const pct  = (idx / TOTAL) * 100;
         const w    = (1  / TOTAL) * 100;
@@ -4152,7 +3821,6 @@ AgriculturalDashboard.prototype.renderHxHTimeline = function() {
                 </div>`;
     }).join('');
 
-    // ── Tooltip de detalhes ────────────────────────────────────
     const detailsForIdx = idx => {
         const b = buckets[idx] || {};
         const peso = b.peso || 0;
@@ -4167,7 +3835,6 @@ AgriculturalDashboard.prototype.renderHxHTimeline = function() {
 
     container.innerHTML = `
     <div class="hxh-root" id="${uid}">
-        <!-- Cabeçalho KPIs -->
         <div class="hxh-kpi-bar">
             <div class="hxh-kpi-item">
                 <span class="hxh-kpi-label">Dia agrícola</span>
@@ -4191,23 +3858,16 @@ AgriculturalDashboard.prototype.renderHxHTimeline = function() {
             </div>
         </div>
 
-        <!-- Scrubber -->
         <div class="hxh-scrubber-wrap">
-            <!-- Título seção -->
             <div class="hxh-section-title">
                 <span><i class="fas fa-clock" style="margin-right:6px;opacity:.7"></i>Linha do Tempo — Entrega por Hora</span>
                 <span class="hxh-drag-hint"><i class="fas fa-hand-point-left"></i> Arraste para navegar</span>
             </div>
 
-            <!-- Trilha com barras + range input sobreposto -->
             <div class="hxh-track-outer">
-                <!-- Segmentos coloridos (barras de altura proporcional) -->
                 <div class="hxh-segments">${segmentsHtml}</div>
-                <!-- Linha base -->
                 <div class="hxh-baseline"></div>
-                <!-- Ticks -->
                 <div class="hxh-ticks">${ticksHtml}</div>
-                <!-- Range input (a bolinha arrastável) -->
                 <input type="range"
                        class="hxh-range"
                        id="${uid}_range"
@@ -4217,7 +3877,6 @@ AgriculturalDashboard.prototype.renderHxHTimeline = function() {
                        value="${currentIdx}">
             </div>
 
-            <!-- Painel de detalhes da hora selecionada -->
             <div class="hxh-detail-panel" id="${uid}_detail">
                 <i class="fas fa-info-circle" style="opacity:.5;margin-right:6px"></i>
                 Arraste a bolinha para ver os dados de cada hora
@@ -4225,7 +3884,6 @@ AgriculturalDashboard.prototype.renderHxHTimeline = function() {
         </div>
     </div>`;
 
-    // ── Lógica do scrubber ──────────────────────────────────────
     const rangeEl  = document.getElementById(`${uid}_range`);
     const detailEl = document.getElementById(`${uid}_detail`);
     const segEls   = container.querySelectorAll('.hxh-seg');
@@ -4234,12 +3892,10 @@ AgriculturalDashboard.prototype.renderHxHTimeline = function() {
         idx = parseInt(idx);
         const { label, peso, viagens, acum, isFut } = detailsForIdx(idx);
 
-        // Destaca segmento ativo
         segEls.forEach((el, i) => {
             el.classList.toggle('hxh-seg-active', i === idx);
         });
 
-        // Atualiza painel de detalhe
         if (isFut) {
             detailEl.innerHTML = `
                 <span style="color:var(--text-secondary)"><i class="fas fa-clock" style="margin-right:5px;opacity:.5"></i>
@@ -4270,14 +3926,11 @@ AgriculturalDashboard.prototype.renderHxHTimeline = function() {
         }
     };
 
-    // Inicializa na hora atual
     updateScrubber(currentIdx);
 
-    // Eventos de arrasto
     rangeEl.addEventListener('input', e => updateScrubber(e.target.value));
     rangeEl.addEventListener('change', e => updateScrubber(e.target.value));
 
-    // Click em segmento pula direto
     segEls.forEach(el => {
         el.addEventListener('click', () => {
             const idx = parseInt(el.dataset.idx);
@@ -4287,11 +3940,7 @@ AgriculturalDashboard.prototype.renderHxHTimeline = function() {
     });
 };
 
-// Inicialização
-
 document.addEventListener('DOMContentLoaded', () => {
-    // FIX MOBILE: garante que o backdrop NUNCA aparece na carga inicial
-    // Antes de qualquer outro código, força o backdrop para hidden
     (function() {
         const bd = document.getElementById('menu-backdrop');
         if (bd) {
@@ -4301,9 +3950,8 @@ document.addEventListener('DOMContentLoaded', () => {
     })();
 
     window.agriculturalDashboard = new AgriculturalDashboard();
-    window.dashboard = window.agriculturalDashboard; // alias para console
+    window.dashboard = window.agriculturalDashboard;
 
-    // Botão "Limpar Cache" — injetado na aba Gerenciar após DOM pronto
     setTimeout(() => {
         if (document.getElementById('_btn-clear-cache')) return;
         const containers = [
@@ -4328,7 +3976,6 @@ document.addEventListener('DOMContentLoaded', () => {
         container.appendChild(btn);
     }, 2000);
     
-    // Tenta usar Firebase Auth se disponível, senão inicia direto
     if (typeof firebase !== 'undefined' && firebase.auth) {
         try {
             firebase.auth().onAuthStateChanged(async (user) => {
@@ -4344,7 +3991,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     } catch (error) {
                         console.error("Erro ao buscar perfil:", error);
-                        // Fallback: inicia sem perfil Firebase
                         window.agriculturalDashboard._directBoot();
                     }
                 } else {
@@ -4356,12 +4002,11 @@ document.addEventListener('DOMContentLoaded', () => {
             window.agriculturalDashboard._directBoot();
         }
     } else {
-        // Sem Firebase: boot direto (mostra dashboard, inicia carregamento)
         console.info('[AUTH] Firebase não detectado. Iniciando modo direto.');
         window.agriculturalDashboard._directBoot();
     }
 });
-// ── GLOBAL NAV SEARCH ─────────────────────────────────────────
+
 window._navSearch = function(q) {
     q = (q || '').toLowerCase().trim();
     const container = document.getElementById('tabs-nav-container');
@@ -4378,14 +4023,10 @@ window._navSearch = function(q) {
         group.style.display = any ? '' : 'none';
     });
 };
-// ═══════════════════════════════════════════════════════════════
-// PWA INSTALL BANNER — mostra automaticamente quando disponível
-// e faz download do snapshot ao instalar
-// ═══════════════════════════════════════════════════════════════
+
 (function initPWAInstall() {
     let deferredPrompt = null;
 
-    // Cria o banner de instalação
     function createInstallBanner() {
         if (document.getElementById('pwa-install-banner')) return;
         const banner = document.createElement('div');
@@ -4425,12 +4066,10 @@ window._navSearch = function(q) {
             deferredPrompt.prompt();
             const { outcome } = await deferredPrompt.userChoice;
             if (outcome === 'accepted') {
-                // Ao instalar: salva snapshot automático para acesso offline
                 setTimeout(() => {
                     if (window.agriculturalDashboard && window.agriculturalDashboard.exportarSnapshotJSON) {
                         window.agriculturalDashboard.exportarSnapshotJSON();
                     }
-                    // Também salva no cache do SW via mensagem
                     if (navigator.serviceWorker.controller && window.agriculturalDashboard) {
                         const snap = {
                             _v: '6.9.0', _ts: new Date().toISOString(),
@@ -4449,25 +4088,20 @@ window._navSearch = function(q) {
             banner.remove();
         };
         document.getElementById('pwa-dismiss-btn').onclick = () => banner.remove();
-
-        // Auto-dismiss após 20s
         setTimeout(() => banner.remove(), 20000);
     }
 
     window.addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault();
         deferredPrompt = e;
-        // Mostra banner após 3s (deixa o dashboard carregar primeiro)
         setTimeout(createInstallBanner, 3000);
     });
 
-    // Registra Service Worker
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('./sw.js')
                 .then(reg => {
                     console.log('[SW] Registrado:', reg.scope);
-                    // Escuta mensagens do SW (snapshot)
                     navigator.serviceWorker.addEventListener('message', (e) => {
                         if (e.data.type === 'SNAPSHOT_SAVED')
                             console.log('[SW] Snapshot salvo no cache:', e.data.key);

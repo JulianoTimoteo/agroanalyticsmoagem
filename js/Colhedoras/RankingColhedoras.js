@@ -43,7 +43,7 @@ function _renderBars(containerId, items, accentColor) {
         // Equipamentos: mostra o código diretamente
         const rawName = item.name || item.codigo || item.operador || '—';
         const name = _safe(String(rawName).trim());
-        const sub   = item.frente ? `Fr. ${_safe(item.frente)}` : '';
+        const sub   = ''; // frente removida - operadores/transbordos não têm frente única
         const pct   = maxVal > 0 ? (peso / maxVal) * 100 : 0;
 
         const div = document.createElement('div');
