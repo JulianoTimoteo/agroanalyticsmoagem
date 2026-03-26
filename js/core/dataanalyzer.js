@@ -314,7 +314,7 @@ if (typeof DataAnalyzer === 'undefined') {
             if (!Array.isArray(data) || data.length === 0) {
                 const empty = this.getEmptyAnalysis(potentialData);
                 if (this.kpisModule && this.kpisModule.calculateAcumuladoSafra) {
-                    empty.acumuladoSafra = this.kpisModule.calculateAcumuladoSafra(null, acmSafraData);
+                    empty.acumuladoSafra = this.kpisModule.calculateAcumuladoSafra(data || [], acmSafraData);
                 }
                 return empty;
             }
@@ -334,7 +334,7 @@ if (typeof DataAnalyzer === 'undefined') {
             const lastTripAvgResult = this.kpisModule.calculateLastTripAverage(filteredData);
             const equipmentDistribution = this.kpisModule.getEquipmentDistribution(filteredData);
             const ownerTypeData = this.kpisModule.analyzeOwnerType(filteredData);
-            const acumuladoSafra = this.kpisModule.calculateAcumuladoSafra(null, acmSafraData);
+            const acumuladoSafra = this.kpisModule.calculateAcumuladoSafra(data || [], acmSafraData);
 
             const analise24h = this.timeModule.analyze24hComplete(filteredData);
             const fleetHourly = this.timeModule.analyzeFleetHourly(filteredData);

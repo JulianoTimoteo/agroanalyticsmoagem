@@ -339,6 +339,17 @@ class AgriculturalDashboard {
             this.currentUserCustomPermissions = dbUserData.permissions?.tabAccess || null;
 
             this.renderTabsNavigation();
+
+            // ── Bloqueia inputs de meta para não-admins ──
+            const _isAdm = ['admin','master'].includes(this.currentUserRole);
+            ['metaMoagemInput','metaRotacaoInput'].forEach(function(id) {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.disabled = !_isAdm;
+                el.title    = _isAdm ? '' : 'Apenas Admin ou Master podem alterar as metas';
+                el.style.opacity = _isAdm ? '' : '0.55';
+                el.style.cursor  = _isAdm ? '' : 'not-allowed';
+            });
             
             this.showTab('tab-moagem');
 
@@ -374,50 +385,40 @@ class AgriculturalDashboard {
         
         if (errorEl) errorEl.classList.add('hidden');
         document.getElementById('auth-success').classList.add('hidden');
-        
         if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Entrando...';
 
         try {
             let email = userIdentifier.trim().toLowerCase();
             if (!email.includes('@')) {
-                email += "@usinapitangueiras.com.br";
+                email += '@usinapitangueiras.com.br';
+            }
+            // Autentica via Firebase Auth — não lê Firestore antes do login
+            // onAuthStateChanged dispara automaticamente após signIn
+            await firebase.auth().signInWithEmailAndPassword(email, password);
+
+            // Salva ou limpa credenciais conforme checkbox
+            const sc = document.getElementById('save-credentials');
+            if (sc && sc.checked) {
+                localStorage.setItem('ag_saved_user', email);
+                localStorage.setItem('ag_saved_pass', btoa(password));
+            } else {
+                localStorage.removeItem('ag_saved_user');
+                localStorage.removeItem('ag_saved_pass');
             }
 
-            const db = firebase.firestore();
-            
-            const userQuery = await db.collection('users')
-                .where('email', '==', email)
-                .limit(1)
-                .get();
-            
-            if (userQuery.empty) {
-                throw new Error("Usuário não encontrado.");
-            }
-            
-            const userDoc = userQuery.docs[0];
-            const userData = userDoc.data();
-            
-            const SENHA_CORRETA = 'a123456@';
-            
-            if (password !== SENHA_CORRETA) {
-                throw new Error("Senha incorreta.");
-            }
-            
-            const mockUser = {
-                uid: userDoc.id,
-                email: userData.email,
-                emailVerified: true
-            };
-            
             document.getElementById('login-user').value = '';
             document.getElementById('login-password').value = '';
 
-            this.handleAuthStateChange(mockUser, userData);
-
         } catch (error) {
-            console.error("Erro no login:", error);
+            console.error('Erro no login:', error);
+            let msg = 'Credenciais inválidas.';
+            if (error.code === 'auth/user-not-found')     msg = 'Usuário não encontrado.';
+            if (error.code === 'auth/wrong-password')     msg = 'Senha incorreta.';
+            if (error.code === 'auth/invalid-email')      msg = 'E-mail inválido.';
+            if (error.code === 'auth/too-many-requests')  msg = 'Muitas tentativas. Aguarde e tente novamente.';
+            if (error.code === 'auth/invalid-credential') msg = 'E-mail ou senha inválidos.';
             if (errorEl) {
-                errorEl.textContent = error.message || "Erro ao fazer login.";
+                errorEl.textContent = msg;
                 errorEl.classList.remove('hidden');
             }
         } finally {
@@ -531,13 +532,16 @@ class AgriculturalDashboard {
     }
 
     async handleLogout() {
-        if (confirm("Tem certeza que deseja sair?")) {
-            try {
-                await firebase.auth().signOut();
-                this.handleAuthStateChange(null);
-            } catch (error) {
-                console.error("Erro ao fazer logout:", error);
-            }
+        // Confirmação simples — sem duplo clique necessário
+        if (!confirm('Confirmar saída do sistema?')) return;
+        try {
+            // Limpa credenciais salvas ao sair explicitamente
+            localStorage.removeItem('ag_saved_user');
+            localStorage.removeItem('ag_saved_pass');
+            await firebase.auth().signOut();
+            this.handleAuthStateChange(null);
+        } catch (error) {
+            console.error('Erro ao fazer logout:', error);
         }
     }
     
@@ -661,9 +665,20 @@ class AgriculturalDashboard {
     openModal(modalId) {
         const modal = document.getElementById(modalId);
         if (modal) {
-            modal.classList.add('active'); 
+            modal.classList.add('active');
             modal.classList.add('visible');
             modal.style.display = 'flex';
+
+            // Pré-preenche apelido ao abrir configurações de conta
+            if (modalId === 'user-settings-modal') {
+                const nickEl = document.getElementById('new-nickname');
+                if (nickEl && this.currentUser) {
+                    nickEl.value = this.currentUser.nickname || '';
+                    nickEl.placeholder = this.currentUser.nickname || 'Seu apelido atual';
+                }
+                // Reseta para a aba de senha por padrão
+                if (typeof accTabSwitch === 'function') accTabSwitch('pass');
+            }
         } else {
             console.error(`Modal ${modalId} não encontrado.`);
         }
@@ -900,134 +915,172 @@ class AgriculturalDashboard {
     }
 
     renderUserTable(container, users) {
+        const cu = this.currentUser;
+        const isM = cu && cu.role === 'master';
+        const isA = cu && (cu.role === 'admin' || cu.role === 'master');
+
         if (users.length === 0) {
             container.innerHTML = `
-                <div style="text-align: center; padding: 3rem 1rem;">
-                    <i class="fas fa-users-slash" style="font-size: 3rem; color: var(--text-secondary);"></i>
-                    <h3>Nenhum usuário cadastrado</h3>
-                    <p>Os usuários ativos aparecerão aqui.</p>
-                </div>
-            `;
+            <div style="text-align:center;padding:4rem 1rem;">
+              <i class="fas fa-users-slash" style="font-size:3rem;color:var(--text-secondary);opacity:.4;"></i>
+              <h3 style="margin:1rem 0 .5rem;color:var(--text);">Nenhum usuário cadastrado</h3>
+              <p style="color:var(--text-secondary);font-size:.9rem;">Crie o primeiro usuário clicando em "Novo Usuário".</p>
+            </div>`;
             return;
         }
 
-        const currentUser = this.currentUser;
-        
-        let html = `
-            <div class="admin-header" style="margin-bottom: 1.5rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <h3 style="margin: 0;">
-                        <i class="fas fa-users-cog"></i> Usuários Ativos
-                    </h3>
-                    <span class="badge ${currentUser.role === 'master' ? 'badge-master' : 'badge-admin'}" style="font-size: 0.9rem;">
-                        <i class="fas ${currentUser.role === 'master' ? 'fa-crown' : 'fa-user-shield'}"></i> ${currentUser.role === 'master' ? 'Master' : 'Administrador'}
-                    </span>
-                </div>
-                <p class="text-secondary" style="margin-top: 0.5rem;">
-                    Total de usuários ativos: <strong>${users.length}</strong>
-                </p>
-            </div>
-            
-            <div class="table-responsive" style="overflow-x: auto; max-height: 500px;">
-                <table class="user-table">
-                    <thead>
-                        <tr>
-                            <th>Identificador/E-mail</th>
-                            <th>Papel</th>
-                            <th>Data Criação</th>
-                            <th>Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-        `;
-        
         users.sort((a, b) => {
-            const dateA = a.createdAt ? new Date(a.createdAt.seconds * 1000) : new Date(0);
-            const dateB = b.createdAt ? new Date(b.createdAt.seconds * 1000) : new Date(0);
-            return dateB - dateA;
+            const rank = { master:0, admin:1, editor:2, viewer:3 };
+            return (rank[a.role]??9) - (rank[b.role]??9);
         });
 
-        users.forEach(user => {
-            const isCurrentUser = currentUser && currentUser.uid === user.id;
-            const creationDate = user.createdAt ? 
-                new Date(user.createdAt.seconds * 1000).toLocaleDateString('pt-BR') : 
-                'N/A';
-            
-            let roleColor = '';
-            let roleIcon = '';
-            switch(user.role) {
-                case 'master': roleColor = 'badge-master'; roleIcon = 'fa-crown'; break;
-                case 'admin': roleColor = 'badge-admin'; roleIcon = 'fa-user-shield'; break;
-                case 'editor': roleColor = 'badge-editor'; roleIcon = 'fa-edit'; break;
-                case 'viewer':
-                default: roleColor = 'badge-viewer'; roleIcon = 'fa-eye'; break;
-            }
-            
-            html += `
-                <tr class="${isCurrentUser ? 'current-user-row' : ''}">
-                    <td>
-                        <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            ${user.nickname || user.email} 
-                            ${isCurrentUser ? '<span class="badge badge-primary" style="font-size: 0.7rem;">Você</span>' : ''}
-                        </div>
-                    </td>
-                    <td>
-                        <div class="role-selector">
-                            <span class="badge ${roleColor}" style="margin-right: 0.5rem;">
-                                <i class="fas ${roleIcon}"></i> ${user.role}
-                            </span>
-                            ${!isCurrentUser && currentUser.role === 'master' ? `
-                                <select class="role-dropdown" data-user-id="${user.id}" onchange="window.agriculturalDashboard.updateUserRole('${user.id}', this.value)">
-                                    <option value="master" ${user.role === 'master' ? 'selected' : ''}>Master</option>
-                                    <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
-                                    <option value="editor" ${user.role === 'editor' ? 'selected' : ''}>Editor</option>
-                                    <option value="viewer" ${user.role === 'viewer' ? 'selected' : ''}>Viewer</option>
-                                </select>
-                            ` : !isCurrentUser && currentUser.role === 'admin' && user.role !== 'master' ? `
-                                <select class="role-dropdown" data-user-id="${user.id}" onchange="window.agriculturalDashboard.updateUserRole('${user.id}', this.value)">
-                                    <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
-                                    <option value="editor" ${user.role === 'editor' ? 'selected' : ''}>Editor</option>
-                                    <option value="viewer" ${user.role === 'viewer' ? 'selected' : ''}>Viewer</option>
-                                </select>
-                            ` : `<span class="text-muted" style="font-size: 0.9rem;">${isCurrentUser ? '(seu papel)' : '(somente master pode alterar)'}</span>`}
-                        </div>
-                    </td>
-                    <td><small class="text-muted">${creationDate}</small></td>
-                    <td>
-                        ${!isCurrentUser ? `
-                            <button class="btn-primary btn-sm" onclick="window.agriculturalDashboard.openUserModal('${user.id}')" style="margin-right: 5px;">
-                                <i class="fas fa-edit"></i> Editar
-                            </button>
-                            <button class="btn-danger btn-sm delete-user-btn" onclick="window.agriculturalDashboard.deleteUserPrompt('${user.id}', '${user.email || user.nickname}')" ${user.role === 'master' ? 'disabled title="Usuário Master não pode ser excluído"' : ''}>
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        ` : `<span class="text-muted" style="font-size: 0.9rem;"><i class="fas fa-info-circle"></i> Não disponível</span>`}
-                    </td>
-                </tr>
-            `;
-        });
+        const roleConf = {
+            master: { badge:'#7B61FF', bg:'rgba(123,97,255,.12)', icon:'fa-crown',       label:'Master'  },
+            admin:  { badge:'#00D4FF', bg:'rgba(0,212,255,.12)',  icon:'fa-user-shield',  label:'Admin'   },
+            editor: { badge:'#22c55e', bg:'rgba(34,197,94,.12)',  icon:'fa-edit',         label:'Editor'  },
+            viewer: { badge:'#f59e0b', bg:'rgba(251,191,36,.12)', icon:'fa-eye',          label:'Viewer'  }
+        };
 
-        html += `
-                    </tbody>
-                </table>
-            </div>
-            
-            <div class="admin-footer" style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--glass-border);">
-                <div class="alert-info" style="padding: 1rem; border-radius: 8px; background: rgba(0, 212, 255, 0.1);">
-                    <strong><i class="fas fa-info-circle"></i> Informações importantes:</strong>
-                    <ul style="margin: 0.5rem 0 0 1.5rem; font-size: 0.9rem;">
-                        <li><strong>Master:</strong> Acesso completo e controle total</li>
-                        <li><strong>Admin:</strong> Acesso completo ao sistema</li>
-                        <li><strong>Editor:</strong> Pode editar dados e fazer uploads</li>
-                        <li><strong>Viewer:</strong> Apenas visualização dos dados</li>
-                        <li>Use "Editar" para configurar permissões específicas por usuário.</li>
-                    </ul>
+        const cards = users.map(u => {
+            const isSelf = cu && cu.uid === u.id;
+            const rc = roleConf[u.role] || roleConf.viewer;
+            const created = u.createdAt ? new Date(u.createdAt.seconds*1000).toLocaleDateString('pt-BR') : '—';
+            const perms = (u.customPermissions || []).length;
+
+            const roleOptions = ['master','admin','editor','viewer']
+                .filter(r => r !== 'master' || isM)
+                .map(r => `<option value="${r}" ${u.role===r?'selected':''}>${roleConf[r].label}</option>`)
+                .join('');
+
+            return `
+            <div class="gu-card ${isSelf ? 'gu-card--self' : ''}" data-uid="${u.id}">
+              <div class="gu-card-top">
+                <div class="gu-avatar" style="background:${rc.bg};color:${rc.badge};">
+                  <i class="fas ${rc.icon}"></i>
                 </div>
-            </div>
-        `;
-        container.innerHTML = html;
-    }
+                <div class="gu-info">
+                  <div class="gu-name">
+                    ${u.nickname || u.email || u.id}
+                    ${isSelf ? '<span class="gu-self-tag">Você</span>' : ''}
+                  </div>
+                  <div class="gu-email">${u.email || '—'}</div>
+                </div>
+                <div class="gu-meta">
+                  <div class="gu-meta-item"><i class="fas fa-calendar-alt"></i> ${created}</div>
+                  <div class="gu-meta-item"><i class="fas fa-key"></i> ${perms} perms</div>
+                </div>
+              </div>
+              <div class="gu-card-bottom">
+                <div class="gu-role-wrap">
+                  <span class="gu-role-badge" style="background:${rc.bg};color:${rc.badge};border-color:${rc.badge}40;">
+                    <i class="fas ${rc.icon}"></i> ${rc.label}
+                  </span>
+                  ${!isSelf && isA ? `
+                  <select class="gu-role-select" onchange="window.agriculturalDashboard.updateUserRole('${u.id}', this.value)" title="Alterar papel">
+                    ${roleOptions}
+                  </select>` : ''}
+                </div>
+                <div class="gu-actions">
+                  ${!isSelf ? `
+                    <button class="gu-btn gu-btn-edit" onclick="window.agriculturalDashboard.openUserModal('${u.id}')" title="Editar">
+                      <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="gu-btn gu-btn-del" onclick="window.agriculturalDashboard.deleteUserPrompt('${u.id}','${(u.email||u.nickname||'').replace(/'/g,'')}')"
+                      ${u.role==='master'?'disabled title="Master não pode ser excluído"':''}>
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  ` : `<span style="font-size:.75rem;color:var(--text-secondary);opacity:.7;">Sua conta</span>`}
+                </div>
+              </div>
+            </div>`;
+        }).join('');
 
+        container.innerHTML = `
+        <style>
+          .gu-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px; padding:4px 0; }
+          @media(max-width:600px){ .gu-grid { grid-template-columns:1fr; } }
+          .gu-card {
+            background:var(--card-bg,rgba(255,255,255,.06));
+            border:1px solid var(--border-color,rgba(255,255,255,.1));
+            border-radius:14px; overflow:hidden;
+            transition:border-color .2s, transform .15s;
+          }
+          .gu-card:hover { border-color:rgba(0,212,255,.35); transform:translateY(-2px); }
+          .gu-card--self { border-color:rgba(123,97,255,.4) !important; }
+          .gu-card-top {
+            display:flex; align-items:flex-start; gap:12px;
+            padding:16px 18px 12px;
+          }
+          .gu-avatar {
+            width:42px; height:42px; border-radius:12px; flex-shrink:0;
+            display:flex; align-items:center; justify-content:center;
+            font-size:1.1rem;
+          }
+          .gu-info { flex:1; min-width:0; }
+          .gu-name {
+            font-size:.9rem; font-weight:800; color:var(--text,#F0F0F0);
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+            display:flex; align-items:center; gap:6px;
+          }
+          .gu-self-tag {
+            font-size:.65rem; font-weight:700; padding:2px 7px;
+            border-radius:10px; background:rgba(123,97,255,.2); color:#a78bfa;
+            border:1px solid rgba(123,97,255,.3); flex-shrink:0;
+          }
+          .gu-email { font-size:.75rem; color:var(--text-secondary); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+          .gu-meta { display:flex; flex-direction:column; gap:3px; flex-shrink:0; align-items:flex-end; }
+          .gu-meta-item { font-size:.68rem; color:var(--text-secondary); display:flex; align-items:center; gap:4px; }
+          .gu-card-bottom {
+            display:flex; align-items:center; justify-content:space-between;
+            padding:10px 18px 14px; border-top:1px solid var(--border-color,rgba(255,255,255,.08));
+            background:rgba(0,0,0,.08);
+          }
+          .gu-role-wrap { display:flex; align-items:center; gap:8px; }
+          .gu-role-badge {
+            display:inline-flex; align-items:center; gap:5px;
+            padding:4px 10px; border-radius:8px; font-size:.74rem; font-weight:700;
+            border:1px solid;
+          }
+          .gu-role-select {
+            padding:4px 8px; border-radius:8px; font-size:.74rem; font-weight:600;
+            background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.15);
+            color:var(--text,#F0F0F0); cursor:pointer;
+          }
+          [data-theme="light"] .gu-role-select { background:#fff; color:#333; border-color:#ccc; }
+          .gu-actions { display:flex; gap:6px; }
+          .gu-btn {
+            width:32px; height:32px; border-radius:8px; border:none; cursor:pointer;
+            display:flex; align-items:center; justify-content:center;
+            font-size:.8rem; transition:all .15s;
+          }
+          .gu-btn:disabled { opacity:.35; cursor:not-allowed; }
+          .gu-btn-edit { background:rgba(0,212,255,.12); color:#00D4FF; }
+          .gu-btn-edit:hover:not(:disabled) { background:rgba(0,212,255,.25); }
+          .gu-btn-del  { background:rgba(239,68,68,.12); color:#f87171; }
+          .gu-btn-del:hover:not(:disabled)  { background:rgba(239,68,68,.25); }
+          .gu-summary {
+            display:flex; align-items:center; justify-content:space-between;
+            padding:0 2px 14px; flex-wrap:wrap; gap:10px;
+          }
+          .gu-summary-text { font-size:.8rem; color:var(--text-secondary); }
+          .gu-summary-text strong { color:var(--text,#F0F0F0); }
+        </style>
+        <div class="gu-summary">
+          <span class="gu-summary-text">
+            <strong>${users.length}</strong> usuário${users.length!==1?'s':''} registrado${users.length!==1?'s':''}
+            &nbsp;·&nbsp; Logado como <strong>${cu?.nickname||cu?.email||'—'}</strong>
+            <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;
+              background:${(roleConf[cu?.role]||roleConf.viewer).bg};
+              color:${(roleConf[cu?.role]||roleConf.viewer).badge};
+              border:1px solid ${(roleConf[cu?.role]||roleConf.viewer).badge}40;
+              font-weight:700;font-size:.68rem;margin-left:6px;">
+              <i class="fas ${(roleConf[cu?.role]||roleConf.viewer).icon}"></i>
+              ${(roleConf[cu?.role]||roleConf.viewer).label}
+            </span>
+          </span>
+        </div>
+        <div class="gu-grid">${cards}</div>`;
+    }
     async updateUserRole(userId, newRole) {
         try {
             const isMaster = this.currentUserRole === 'master';
@@ -1111,17 +1164,9 @@ class AgriculturalDashboard {
             });
             
             const countEl = document.getElementById('requests-count');
-            if(countEl) countEl.textContent = requests.length;
-            
-            const bellIcon = document.querySelector('.fa-bell');
-            if (bellIcon) {
-                if (requests.length > 0) {
-                     bellIcon.style.color = 'var(--danger)';
-                     bellIcon.classList.add('fa-shake');
-                } else {
-                     bellIcon.style.color = '';
-                     bellIcon.classList.remove('fa-shake');
-                }
+            if (countEl) {
+                countEl.textContent = requests.length;
+                countEl.className = 'gu-badge-count' + (requests.length > 0 ? '' : ' zero');
             }
 
             if (requests.length === 0) {
@@ -1129,35 +1174,44 @@ class AgriculturalDashboard {
                 return;
             }
 
-            let html = `<div class="table-responsive"><table class="user-table"><thead><tr><th>Nome</th><th>E-mail</th><th>Telefone/WhatsApp</th><th>Solicitado em</th><th>Ações</th></tr></thead><tbody>`;
-            
-            requests.forEach(req => {
+            const cards = requests.map(req => {
                 const requestedAt = req.requestedAt ? new Date(req.requestedAt.seconds * 1000).toLocaleDateString('pt-BR') : 'N/A';
-                html += `
-                    <tr>
-                        <td>${req.name}</td>
-                        <td>${req.email}</td>
-                        <td>
-                            <a href="https://wa.me/${req.phone.replace(/\D/g, '')}" target="_blank" style="color: var(--whatsapp-color); text-decoration: none;">
-                                <i class="fab fa-whatsapp"></i> ${req.phone}
-                            </a>
-                        </td>
-                        <td><small class="text-muted">${requestedAt}</small></td>
-                        <td>
-                            <button class="btn-primary" style="background: var(--success); padding: 5px 10px;"
-                                onclick="window.agriculturalDashboard.approveRequest('${req.id}', '${req.email}', '${req.name}')">
-                                <i class="fas fa-check"></i> Aprovar
-                            </button>
-                            <button class="btn-danger" style="margin-left: 0.5rem;"
-                                onclick="window.agriculturalDashboard.rejectRequest('${req.id}', '${req.email}')">
-                                <i class="fas fa-times"></i> Recusar
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            });
-            html += `</tbody></table></div>`;
-            container.innerHTML = html;
+                const phone = (req.phone || '').replace(/\D/g, '');
+                return `
+                <div style="background:var(--card-bg,rgba(255,255,255,.06));border:1px solid var(--border-color,rgba(255,255,255,.1));
+                  border-radius:12px;padding:16px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+                  <div style="width:40px;height:40px;border-radius:12px;background:rgba(251,191,36,.12);color:#fbbf24;
+                    display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;">
+                    <i class="fas fa-user-clock"></i>
+                  </div>
+                  <div style="flex:1;min-width:180px;">
+                    <div style="font-weight:800;font-size:.9rem;color:var(--text);">${req.name || '—'}</div>
+                    <div style="font-size:.76rem;color:var(--text-secondary);margin-top:2px;">${req.email || '—'}</div>
+                    ${phone ? `<a href="https://wa.me/${phone}" target="_blank"
+                      style="font-size:.75rem;color:#25D366;text-decoration:none;display:inline-flex;align-items:center;gap:4px;margin-top:3px;">
+                      <i class="fab fa-whatsapp"></i> ${req.phone}
+                    </a>` : ''}
+                  </div>
+                  <div style="font-size:.72rem;color:var(--text-secondary);white-space:nowrap;">
+                    <i class="fas fa-calendar-alt" style="margin-right:4px;opacity:.6;"></i>${requestedAt}
+                  </div>
+                  <div style="display:flex;gap:8px;flex-shrink:0;">
+                    <button style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;
+                      border-radius:8px;border:none;cursor:pointer;font-size:.78rem;font-weight:700;
+                      background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;"
+                      onclick="window.agriculturalDashboard.approveRequest('${req.id}','${req.email}','${req.name}','${(req.phone||\'\').replace(/\D/g,\'\')}')">
+                      <i class="fas fa-check"></i> Aprovar
+                    </button>
+                    <button style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;
+                      border-radius:8px;border:none;cursor:pointer;font-size:.78rem;font-weight:700;
+                      background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);"
+                      onclick="window.agriculturalDashboard.rejectRequest('${req.id}','${req.email}')">
+                      <i class="fas fa-times"></i> Recusar
+                    </button>
+                  </div>
+                </div>`;
+            }).join('');
+            container.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px;">${cards}</div>`;
 
         } catch (error) {
             console.error("Erro ao carregar solicitações:", error);
@@ -1165,37 +1219,60 @@ class AgriculturalDashboard {
         }
     }
 
-    async approveRequest(requestId, email, name) {
-        if (!confirm(`Aprovar cadastro para ${email}?`)) return;
+    async approveRequest(requestId, email, name, phone) {
+        if (!confirm(`Aprovar cadastro para ${name} (${email})?`)) return;
         try {
-            const SENHA_PADRAO = 'a123456@';
             const db = firebase.firestore();
-            const userCredential = await firebase.auth().createUserWithEmailAndPassword(email, SENHA_PADRAO);
+            // Gera senha temporária aleatória (8 chars)
+            const tmpPass = Math.random().toString(36).slice(-4).toUpperCase() +
+                            Math.random().toString(36).slice(-4) + '!';
+
+            const userCredential = await firebase.auth().createUserWithEmailAndPassword(email, tmpPass);
             const newUser = userCredential.user;
-            
+
             await db.collection('users').doc(newUser.uid).set({
                 email: email,
-                nickname: email.split('@')[0],
+                nickname: name || email.split('@')[0],
                 name: name,
                 role: 'viewer',
-                customPermissions: ['tab-gerenciar', 'tab-moagem', 'tab-consumo', 'tab-consumo-cam', 'tab-caminhao', 'tab-equipamento', 'tab-frentes', 'tab-metas', 'tab-horaria', 'tab-usuarios', 'tab-visaoglobal'],
+                customPermissions: ['tab-moagem','tab-consumo','tab-consumo-cam',
+                    'tab-caminhao','tab-equipamento','tab-frentes','tab-metas',
+                    'tab-horaria','tab-visaoglobal'],
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             });
-            
+
             await db.collection('requests').doc(requestId).update({
                 status: 'approved',
                 approvedAt: firebase.firestore.FieldValue.serverTimestamp(),
                 authUid: newUser.uid
             });
 
-            alert(`Sucesso! Usuário criado.\nEmail: ${email}\nSenha: ${SENHA_PADRAO}\n\nEnvie estes dados ao usuário.`);
+            // Envia e-mail de redefinição de senha pelo Firebase (link oficial)
+            await firebase.auth().sendPasswordResetEmail(email);
+
+            // Abre WhatsApp com mensagem de aprovação se tiver telefone
+            const reqSnap = await db.collection('requests').doc(requestId).get();
+            const reqData  = reqSnap.exists ? reqSnap.data() : {};
+            const tel      = (reqData.phone || phone || '').replace(/\D/g,'');
+            if (tel) {
+                const msgWA = encodeURIComponent(
+                    `Olá ${name}! Seu acesso ao AgroAnalytics foi aprovado. ✅\n` +
+                    `📧 E-mail: ${email}\n` +
+                    `🔑 Você receberá um e-mail para definir sua senha.\n` +
+                    `Após criar a senha, acesse o sistema normalmente.`
+                );
+                window.open(`https://wa.me/55${tel}?text=${msgWA}`, '_blank');
+            }
+
+            alert(`✅ Usuário ${name} criado!\nE-mail de redefinição de senha enviado para ${email}.`);
             this.loadRegistrationRequests();
             this.loadUserManagementData();
         } catch (error) {
-            console.error("Erro na aprovação:", error);
+            console.error('Erro na aprovação:', error);
             let errorMessage = error.message;
-            if (error.code === 'auth/email-already-in-use') errorMessage = "Este e-mail já está em uso. Verifique se o usuário já foi criado.";
+            if (error.code === 'auth/email-already-in-use')
+                errorMessage = 'Este e-mail já está em uso. O usuário pode já ter sido criado.';
             alert(`Erro ao criar usuário: ${errorMessage}`);
         }
     }
@@ -1517,6 +1594,55 @@ class AgriculturalDashboard {
             : acumuladoReal;
         const safraAcumulado = _parseSafraNum(safraAcumuladoRaw);
         updateEl('moagemAcumuladoSafra', safraAcumulado.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' t');
+
+        // ── Tooltip safra-aware: mostra safra atual + safra anterior ──
+        try {
+            const safraInfo = this.analyzer && this.analyzer._safraInfo;
+            const safraLabelEl = document.getElementById('acumuladoSafra');
+            if (safraLabelEl && safraInfo) {
+                const labelCard = safraLabelEl.closest('.info-compact-card');
+                if (labelCard) {
+                    // Remove tooltip anterior
+                    const oldTip = labelCard.querySelector('.safra-tooltip-wrap');
+                    if (oldTip) oldTip.remove();
+
+                    const tipWrap = document.createElement('div');
+                    tipWrap.className = 'safra-tooltip-wrap';
+                    tipWrap.style.cssText = 'position:relative;display:inline-flex;align-items:center;margin-top:4px;cursor:help;';
+
+                    const tipLabel = document.createElement('span');
+                    tipLabel.style.cssText = 'font-size:.7rem;color:var(--primary);font-weight:700;border-bottom:1px dashed;';
+                    tipLabel.textContent = safraInfo.hasSafra2627 ? 'Safra 26/27 ▲' : 'Safra 25/26';
+
+                    const tipBox = document.createElement('div');
+                    tipBox.style.cssText = [
+                        'position:absolute;bottom:calc(100% + 6px);left:0;',
+                        'background:#1e293b;color:#e2e8f0;border:1px solid #334155;',
+                        'border-radius:8px;padding:8px 12px;font-size:.75rem;z-index:9999;',
+                        'white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.4);',
+                        'display:none;min-width:200px;'
+                    ].join('');
+
+                    const fmt = n => n.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+                    const lines = [
+                        `<b>🌿 Safra Atual (${safraInfo.safraAtual})</b>`,
+                        `${fmt(safraInfo.hasSafra2627 ? safraInfo.total2627 : safraInfo.total2526)} t`,
+                        `<hr style="border-color:#334155;margin:5px 0;">`,
+                    ];
+                    if (safraInfo.hasSafra2627 && safraInfo.total2526 > 0) {
+                        lines.push(`<span style="opacity:.7;">Safra Anterior 25/26:</span>`);
+                        lines.push(`<span style="opacity:.7;">${fmt(safraInfo.total2526)} t</span>`);
+                    }
+                    tipBox.innerHTML = lines.join('<br>');
+
+                    tipWrap.addEventListener('mouseenter', () => { tipBox.style.display = 'block'; });
+                    tipWrap.addEventListener('mouseleave', () => { tipBox.style.display = 'none'; });
+                    tipWrap.appendChild(tipLabel);
+                    tipWrap.appendChild(tipBox);
+                    labelCard.appendChild(tipWrap);
+                }
+            }
+        } catch(e) { /* tooltip safra opcional */ }
         
         if (this.analysisResult && this.data && this.data.length > 0) {
             const totalViagens = this.analysisResult.totalViagens || 0;
@@ -3209,6 +3335,30 @@ class AgriculturalDashboard {
     }
 
     initializeEventListeners() {
+        // ── Auto-fill e auto-login se credenciais salvas ──
+        (function autoFillCredentials() {
+            try {
+                const savedU = localStorage.getItem('ag_saved_user');
+                const savedP = localStorage.getItem('ag_saved_pass');
+                if (savedU && savedP) {
+                    const uEl = document.getElementById('login-user');
+                    const pEl = document.getElementById('login-password');
+                    const sc  = document.getElementById('save-credentials');
+                    if (uEl) uEl.value = savedU;
+                    if (pEl) pEl.value = atob(savedP);
+                    if (sc)  sc.checked = true;
+                    const rm = document.getElementById('remember-me');
+                    // Dispara login automático se "manter conectado" estiver marcado
+                    if (rm && rm.checked) {
+                        setTimeout(() => {
+                            const form = document.getElementById('login-form');
+                            if (form) form.dispatchEvent(new Event('submit', { bubbles:true, cancelable:true }));
+                        }, 600);
+                    }
+                }
+            } catch(e) { /* credenciais corrompidas — ignora */ }
+        })();
+
         const fileInput = document.getElementById('fileInput');
         if (fileInput) fileInput.addEventListener('change', (e) => this.handleFileUpload(e));
 
@@ -3276,6 +3426,76 @@ class AgriculturalDashboard {
         if (signupForm) signupForm.addEventListener('submit', (e) => this.handleSignup(e));
         const adminUserForm = document.getElementById('admin-user-form');
         if (adminUserForm) adminUserForm.addEventListener('submit', (e) => this.saveAdminUser(e));
+
+        // ── Alterar senha (modal de conta) ──
+        const updatePassForm = document.getElementById('update-password-form');
+        if (updatePassForm) {
+            updatePassForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const curPass  = document.getElementById('current-password').value;
+                const newPass  = document.getElementById('new-password').value;
+                const confPass = document.getElementById('confirm-new-password').value;
+                const alertEl  = document.getElementById('modal-alert-message');
+                if (newPass !== confPass) { alert('As senhas não coincidem.'); return; }
+                if (newPass.length < 6)   { alert('A nova senha deve ter ao menos 6 caracteres.'); return; }
+                try {
+                    const user = firebase.auth().currentUser;
+                    if (!user) { alert('Sessão expirada. Faça login novamente.'); return; }
+                    // Re-autentica antes de trocar a senha
+                    const cred = firebase.auth.EmailAuthProvider.credential(user.email, curPass);
+                    await user.reauthenticateWithCredential(cred);
+                    await user.updatePassword(newPass);
+                    // Atualiza credenciais salvas se existiam
+                    const savedU = localStorage.getItem('ag_saved_user');
+                    if (savedU) {
+                        localStorage.setItem('ag_saved_pass', btoa(newPass));
+                    }
+                    if (alertEl) {
+                        alertEl.textContent = '✅ Senha alterada com sucesso!';
+                        alertEl.classList.remove('hidden');
+                        setTimeout(() => alertEl.classList.add('hidden'), 3500);
+                    }
+                    updatePassForm.reset();
+                } catch(err) {
+                    let msg = 'Erro ao alterar senha.';
+                    if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential')
+                        msg = 'Senha atual incorreta.';
+                    if (err.code === 'auth/weak-password') msg = 'Senha muito fraca (mín. 6 caracteres).';
+                    alert(msg);
+                }
+            });
+        }
+
+        // ── Alterar apelido (modal de conta) ──
+        const nickForm = document.getElementById('update-nickname-form');
+        if (nickForm) {
+            nickForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const nick   = document.getElementById('new-nickname').value.trim();
+                const alertEl = document.getElementById('modal-alert-message');
+                if (!nick) { alert('Digite um apelido.'); return; }
+                try {
+                    const uid = this.currentUser && this.currentUser.uid;
+                    if (!uid) { alert('Sessão expirada.'); return; }
+                    await firebase.firestore().collection('users').doc(uid).update({
+                        nickname: nick,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    if (this.currentUser) this.currentUser.nickname = nick;
+                    // Atualiza exibição no header
+                    const emailEl = document.getElementById('current-user-email');
+                    if (emailEl) emailEl.textContent = nick;
+                    const gcBadge = document.getElementById('gc-user-badge');
+                    if (gcBadge) gcBadge.textContent = nick;
+                    if (alertEl) {
+                        alertEl.textContent = '✅ Apelido atualizado!';
+                        alertEl.classList.remove('hidden');
+                        setTimeout(() => alertEl.classList.add('hidden'), 3000);
+                    }
+                    nickForm.reset();
+                } catch(err) { alert('Erro: ' + err.message); }
+            });
+        }
         
         document.querySelectorAll('#tab-usuarios .sub-tabs-nav button').forEach(button => {
              const onclickAttr = button.getAttribute('onclick');
@@ -3344,6 +3564,16 @@ class AgriculturalDashboard {
 
         const icon = document.getElementById('theme-icon');
         if (icon) icon.className = newTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+
+        // Re-injeta CSS do ConsumoCaminhoes no <head> para garantir troca de tema imediata
+        if (this.consumoCamRenderer && typeof this.consumoCamRenderer._cssText === 'function') {
+            const old = document.getElementById('vcc4-styles');
+            if (old) old.remove();
+            const s = document.createElement('style');
+            s.id = 'vcc4-styles';
+            s.textContent = this.consumoCamRenderer._cssText();
+            document.head.appendChild(s);
+        }
 
         this._updateChartsTheme(newTheme);
 

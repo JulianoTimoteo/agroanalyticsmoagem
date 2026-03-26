@@ -466,19 +466,54 @@
             <button class="close-btn" onclick="if(window.agriculturalDashboard) window.agriculturalDashboard.closeModal('user-settings-modal')" aria-label="Fechar"><i class="fas fa-times"></i></button>
             <h3 id="modal-title">Configurações de Conta</h3>
             <div id="modal-alert-message" class="alert-success-login hidden margin-bottom-10"></div>
-            <form id="update-password-form">
-                <input type="text" name="username" style="display:none" autocomplete="username">
-                <p class="text-secondary margin-bottom-15">Atualize sua senha. O email de redefinição será enviado para a sua conta atual.</p>
-                <input type="password" name="current-password" id="current-password" placeholder="Senha Atual (Obrigatório para Confirmação)" required autocomplete="current-password">
-                <input type="password" name="new-password" id="new-password" placeholder="Nova Senha (Mín. 6 caracteres)" required autocomplete="new-password">
-                <input type="password" name="confirm-password" id="confirm-new-password" placeholder="Confirme a Nova Senha" required autocomplete="new-password">
-                <button type="submit" class="btn-primary margin-bottom-10">
-                    <i class="fas fa-key"></i> Salvar Nova Senha
+            <div id="account-settings-tabs" style="display:flex;gap:4px;margin-bottom:16px;background:rgba(0,0,0,.15);padding:4px;border-radius:10px;">
+                <button class="gc-btn ghost" id="acc-tab-pass" onclick="accTabSwitch('pass')" style="flex:1;justify-content:center;padding:7px;font-size:.8rem;border-radius:7px;background:rgba(0,212,255,.12);color:#00D4FF;border-color:#00D4FF40;">
+                    <i class="fas fa-key"></i> Senha
                 </button>
-                <p class="text-secondary modal-footer-text">
-                    Para alterar o e-mail, entre em contato com o administrador.
-                </p>
-            </form>
+                <button class="gc-btn ghost" id="acc-tab-nick" onclick="accTabSwitch('nick')" style="flex:1;justify-content:center;padding:7px;font-size:.8rem;border-radius:7px;">
+                    <i class="fas fa-user-edit"></i> Apelido
+                </button>
+            </div>
+
+            <!-- Painel: Alterar Senha -->
+            <div id="acc-panel-pass">
+                <form id="update-password-form">
+                    <input type="text" name="username" style="display:none" autocomplete="username">
+                    <p class="text-secondary margin-bottom-15" style="font-size:.83rem;">Atualize sua senha de acesso. Precisa da senha atual para confirmar.</p>
+                    <input type="password" name="current-password" id="current-password" placeholder="Senha Atual (obrigatório)" required autocomplete="current-password">
+                    <input type="password" name="new-password" id="new-password" placeholder="Nova Senha (mín. 6 caracteres)" required autocomplete="new-password">
+                    <input type="password" name="confirm-password" id="confirm-new-password" placeholder="Confirme a Nova Senha" required autocomplete="new-password">
+                    <button type="submit" class="btn-primary margin-bottom-10">
+                        <i class="fas fa-key"></i> Salvar Nova Senha
+                    </button>
+                    <p class="text-secondary" style="font-size:.75rem;">Para alterar o e-mail, fale com o administrador.</p>
+                </form>
+            </div>
+
+            <!-- Painel: Alterar Apelido -->
+            <div id="acc-panel-nick" style="display:none;">
+                <form id="update-nickname-form">
+                    <p class="text-secondary margin-bottom-15" style="font-size:.83rem;">Defina um apelido para exibição no sistema. O login continua sendo feito pelo e-mail.</p>
+                    <input type="text" id="new-nickname" placeholder="Novo apelido" required autocomplete="off" maxlength="40">
+                    <button type="submit" class="btn-primary margin-bottom-10">
+                        <i class="fas fa-user-edit"></i> Salvar Apelido
+                    </button>
+                </form>
+            </div>
+
+            <script>
+            function accTabSwitch(tab) {
+                ['pass','nick'].forEach(t => {
+                    document.getElementById('acc-panel-' + t).style.display = t === tab ? '' : 'none';
+                    var btn = document.getElementById('acc-tab-' + t);
+                    if (btn) {
+                        btn.style.background = t === tab ? 'rgba(0,212,255,.12)' : 'transparent';
+                        btn.style.color      = t === tab ? '#00D4FF' : 'var(--text-secondary)';
+                        btn.style.borderColor = t === tab ? '#00D4FF40' : 'transparent';
+                    }
+                });
+            }
+            </script>
         </div>
     </div>
 
@@ -527,13 +562,19 @@
                 <input type="text" id="login-user" placeholder="Apelido ou E-mail" required autocomplete="username">
                 <input type="password" id="login-password" placeholder="Senha" required autocomplete="current-password">
                 
-                <div class="checkbox-container">
-                    <input type="checkbox" id="remember-me" checked>
-                    <label for="remember-me" style="cursor: pointer;">Manter conectado</label>
+                <div style="display:flex; gap:16px; flex-wrap:wrap; margin:8px 0 14px;">
+                    <div class="checkbox-container" style="margin:0;">
+                        <input type="checkbox" id="remember-me" checked>
+                        <label for="remember-me" style="cursor:pointer;">Manter conectado</label>
+                    </div>
+                    <div class="checkbox-container" style="margin:0;">
+                        <input type="checkbox" id="save-credentials">
+                        <label for="save-credentials" style="cursor:pointer;">Salvar usuário e senha</label>
+                    </div>
                 </div>
 
                 <div class="login-actions">
-                    <button type="submit" class="btn-primary">Entrar</button>
+                    <button type="submit" class="btn-primary">Entrar <i class="fas fa-arrow-right"></i></button>
                 </div>
                 
                 <a href="#" id="forgot-password-link" class="btn-forgot">Esqueceu a senha? Redefinir</a>
@@ -675,15 +716,15 @@
                         <i class="fas fa-tractor"></i><span>Colhedoras</span>
                     </button>
                     <button class="tab-button" data-tab="tab-consumo" onclick="safeShowTab('tab-consumo')">
-                        <i class="fas fa-gas-pump"></i><span>Consumo</span>
+                        <i class="fas fa-gas-pump"></i><span>Consumo Col</span>
                     </button>
                     <button class="tab-button" data-tab="tab-consumo-cam" onclick="safeShowTab('tab-consumo-cam')">
                         <i class="fas fa-truck"></i><span>Consumo Cam</span>
                     </button>
-                    <button class="tab-button nav-oee-btn" data-tab="tab-oee-colhedoras" onclick="safeShowTab('tab-oee-colhedoras')">
+                    <button class="tab-button nav-oee-btn" data-tab="tab-oee-colhedoras" onclick="safeShowTab('tab-oee-colhedoras')" style="display:none">
                         <i class="fas fa-chart-bar"></i><span>OEE Colh.</span><em class="nav-badge">OEE</em>
                     </button>
-                    <button class="tab-button nav-oee-btn" data-tab="tab-eficiencia-operacional" onclick="safeShowTab('tab-eficiencia-operacional')">
+                    <button class="tab-button nav-oee-btn" data-tab="tab-eficiencia-operacional" onclick="safeShowTab('tab-eficiencia-operacional')" style="display:none">
                         <i class="fas fa-tachometer-alt"></i><span>Eficiência</span><em class="nav-badge">OEE</em>
                     </button>
                 </div>
@@ -734,133 +775,441 @@
                     <div class="tabs-content">
                         
                         <div id="tab-gerenciar" class="tab-pane active">
-                            <div class="analytics-row">
-                                <div class="analytics-card glass-card full-width hover-zoom-card">
-                                    <div class="card-header">
-                                        <h3><i class="fas fa-tv"></i> Modo Apresentação (TV/Quiosque)</h3>
-                                    </div>
-                                    <div class="presentation-controls" style="display: flex; align-items: center; gap: 20px; padding: 10px;">
-                                        <div class="input-group-row" style="flex: 0 0 auto;">
-                                            <label for="presentation-timer">Tempo por Slide (seg):</label>
-                                            <input type="number" id="presentation-timer" value="20" min="5" 
-                                                   style="width: 80px; text-align: center; background: rgba(255,255,255,0.1); 
-                                                          border: 1px solid var(--glass-border); color: var(--text); 
-                                                          padding: 5px; border-radius: 4px;">
-                                        </div>
-                                        <button class="btn-primary" id="presentation-toggle-btn">
-                                            <i class="fas fa-tv"></i> INICIAR APRESENTAÇÃO
-                                        </button>
-                                    </div>
-                                    <!-- Checkboxes de abas para o quiosque — injetadas pelo modtv.js -->
-                                    <div id="presentation-tab-checkboxes" style="padding:0 10px 14px;"></div>
-                                </div>
+
+                          <!-- ══ GERENCIAR: FUTURISTIC CONTROL CENTER ══ -->
+                          <style>
+                          .gc-root {
+                            display:flex; flex-direction:column; gap:20px;
+                            font-family:'Segoe UI',system-ui,sans-serif;
+                            padding:4px 0;
+                          }
+                          /* Hero Banner */
+                          .gc-hero {
+                            background:linear-gradient(135deg,rgba(0,212,255,.08) 0%,rgba(123,97,255,.08) 100%);
+                            border:1px solid rgba(0,212,255,.18);
+                            border-radius:16px; padding:20px 24px;
+                            display:flex; align-items:center; justify-content:space-between;
+                            flex-wrap:wrap; gap:16px;
+                            position:relative; overflow:hidden;
+                          }
+                          .gc-hero::before {
+                            content:''; position:absolute; top:-40px; right:-40px;
+                            width:200px; height:200px; border-radius:50%;
+                            background:radial-gradient(circle,rgba(0,212,255,.08) 0%,transparent 70%);
+                            pointer-events:none;
+                          }
+                          .gc-hero-text h2 {
+                            margin:0 0 4px; font-size:1.3rem; font-weight:800;
+                            background:linear-gradient(135deg,#00D4FF,#7B61FF);
+                            -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+                            background-clip:text;
+                          }
+                          .gc-hero-text p { margin:0; font-size:.82rem; color:var(--text-secondary); }
+                          .gc-status-pills { display:flex; gap:8px; flex-wrap:wrap; }
+                          .gc-pill {
+                            display:flex; align-items:center; gap:6px;
+                            padding:6px 14px; border-radius:20px; font-size:.75rem; font-weight:700;
+                            border:1px solid; letter-spacing:.03em;
+                          }
+                          .gc-pill.online { background:rgba(34,197,94,.1); border-color:rgba(34,197,94,.3); color:#4ade80; }
+                          .gc-pill.user   { background:rgba(0,212,255,.1); border-color:rgba(0,212,255,.3); color:#00D4FF; }
+                          .gc-pill.ver    { background:rgba(123,97,255,.1); border-color:rgba(123,97,255,.3); color:#a78bfa; }
+                          .gc-pill-dot { width:7px; height:7px; border-radius:50%; background:currentColor; animation:gc-blink 2s ease-in-out infinite; }
+                          @keyframes gc-blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+                          /* Grid de módulos */
+                          .gc-grid {
+                            display:grid;
+                            grid-template-columns:1fr 1fr;
+                            gap:16px;
+                          }
+                          @media(max-width:700px){ .gc-grid { grid-template-columns:1fr; } }
+
+                          .gc-module {
+                            background:var(--card-bg,rgba(255,255,255,.06));
+                            border:1px solid var(--border-color,rgba(255,255,255,.1));
+                            border-radius:14px; overflow:hidden;
+                            transition:border-color .2s, transform .2s;
+                          }
+                          .gc-module:hover { border-color:rgba(0,212,255,.35); transform:translateY(-2px); }
+
+                          .gc-module-header {
+                            display:flex; align-items:center; gap:10px;
+                            padding:14px 18px; border-bottom:1px solid var(--border-color,rgba(255,255,255,.08));
+                            background:rgba(0,0,0,.12);
+                          }
+                          .gc-module-icon {
+                            width:36px; height:36px; border-radius:10px;
+                            display:flex; align-items:center; justify-content:center;
+                            font-size:1rem; flex-shrink:0;
+                          }
+                          .gc-module-icon.blue  { background:rgba(0,212,255,.12); color:#00D4FF; }
+                          .gc-module-icon.purple{ background:rgba(123,97,255,.12); color:#7B61FF; }
+                          .gc-module-icon.green { background:rgba(34,197,94,.12);  color:#22c55e; }
+                          .gc-module-icon.amber { background:rgba(251,191,36,.12); color:#fbbf24; }
+
+                          .gc-module-title { font-size:.9rem; font-weight:800; color:var(--text,#F0F0F0); margin:0; }
+                          .gc-module-sub   { font-size:.72rem; color:var(--text-secondary,#94a3b8); margin:0; }
+                          .gc-module-body  { padding:16px 18px; }
+
+                          /* Dropzone repaginada */
+                          .gc-dropzone {
+                            border:2px dashed rgba(0,212,255,.3); border-radius:12px;
+                            padding:28px 16px; text-align:center; cursor:pointer;
+                            transition:all .2s; background:rgba(0,212,255,.03);
+                          }
+                          .gc-dropzone:hover, .gc-dropzone.drag-over {
+                            border-color:#00D4FF; background:rgba(0,212,255,.07);
+                          }
+                          .gc-dropzone i { font-size:2.2rem; color:#00D4FF; margin-bottom:10px; display:block; }
+                          .gc-dropzone p { margin:0 0 12px; font-size:.85rem; color:var(--text-secondary); }
+                          .gc-dz-file-info { font-size:.75rem; color:#00D4FF; margin-top:8px; min-height:18px; }
+
+                          /* Botões de ação */
+                          .gc-btn {
+                            display:inline-flex; align-items:center; gap:7px;
+                            padding:9px 18px; border-radius:9px; font-size:.82rem; font-weight:700;
+                            border:none; cursor:pointer; transition:all .18s; letter-spacing:.02em;
+                          }
+                          .gc-btn.primary { background:linear-gradient(135deg,#00D4FF,#0088CC); color:#fff; }
+                          .gc-btn.primary:hover { opacity:.88; transform:translateY(-1px); }
+                          .gc-btn.success { background:linear-gradient(135deg,#22c55e,#16a34a); color:#fff; }
+                          .gc-btn.info    { background:linear-gradient(135deg,#3b82f6,#1d4ed8); color:#fff; }
+                          .gc-btn.amber   { background:linear-gradient(135deg,#f59e0b,#d97706); color:#fff; }
+                          .gc-btn.ghost   {
+                            background:rgba(255,255,255,.06); color:var(--text);
+                            border:1px solid var(--border-color,rgba(255,255,255,.15));
+                          }
+                          .gc-btn.ghost:hover { background:rgba(255,255,255,.1); }
+                          .gc-btn-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+
+                          /* Presentation timer input */
+                          .gc-timer-row { display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+                          .gc-timer-row label { font-size:.8rem; color:var(--text-secondary); }
+                          .gc-timer-input {
+                            width:72px; text-align:center; padding:7px;
+                            background:rgba(255,255,255,.07); border:1px solid var(--border-color,rgba(255,255,255,.15));
+                            border-radius:8px; color:var(--text,#F0F0F0); font-size:.9rem; font-weight:700;
+                          }
+                          [data-theme="light"] .gc-timer-input { background:#fff; }
+
+                          /* Snapshot row */
+                          .gc-snapshot-desc { font-size:.78rem; color:var(--text-secondary); margin:0 0 12px; line-height:1.5; }
+
+                          /* Status list */
+                          .gc-stat-list { display:flex; flex-direction:column; gap:10px; }
+                          .gc-stat-item {
+                            display:flex; justify-content:space-between; align-items:center;
+                            padding:9px 12px; background:rgba(0,0,0,.1); border-radius:8px;
+                            border:1px solid rgba(255,255,255,.06);
+                            font-size:.82rem;
+                          }
+                          .gc-stat-label { color:var(--text-secondary); }
+                          .gc-stat-val { font-weight:700; color:var(--text,#F0F0F0); }
+                          .gc-stat-val.ok  { color:#4ade80; }
+                          .gc-stat-val.pri { color:#00D4FF; }
+                          .gc-stat-val.pur { color:#a78bfa; }
+
+                          /* Presentation checkboxes */
+                          #presentation-tab-checkboxes label { font-size:.8rem; }
+                          </style>
+
+                          <div class="gc-root">
+
+                            <!-- Hero -->
+                            <div class="gc-hero">
+                              <div class="gc-hero-text">
+                                <h2><i class="fas fa-sliders-h" style="-webkit-text-fill-color:initial;color:#00D4FF;margin-right:8px;font-size:1.1rem;"></i>Central de Controle</h2>
+                                <p>Configurações do sistema, dados e sessão de apresentação</p>
+                              </div>
+                              <div class="gc-status-pills">
+                                <div class="gc-pill online"><div class="gc-pill-dot"></div>ATIVO</div>
+                                <div class="gc-pill user"><i class="fas fa-user" style="font-size:.7rem"></i><span id="current-user-email">—</span></div>
+                                <div class="gc-pill ver"><i class="fas fa-code-branch" style="font-size:.7rem"></i>v7.2.1</div>
+                              </div>
                             </div>
 
-                            <div class="analytics-row">
-                                <div class="analytics-card glass-card half-width hover-zoom-card">
-                                    <div class="card-header">
-                                        <h3><i class="fas fa-upload"></i> Carregamento de Dados</h3>
-                                    </div>
-                                    
-                                    <div class="dropzone-card glass-card upload-highlight" id="dropzoneCard"> 
-                                        <label for="fileInput" class="sr-only">Upload de Arquivo</label>
-                                        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" multiple webkitdirectory directory hidden>
-                                        
-                                        <div class="dropzone-content">
-                                            <i class="fas fa-cloud-upload-alt upload-icon"></i>
-                                            <p class="drop-text">Arraste e Solte seus arquivos ou pastas aqui</p>
-                                            <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
-                                                <i class="fas fa-file-import"></i> Selecionar Arquivo
-                                            </button>
-                                        </div>
-                                        <div class="file-info-compact" id="fileInfo">Aguardando arquivo...</div>
-                                    </div>
+                            <!-- Grid 2 colunas -->
+                            <div class="gc-grid">
 
-                                    <div class="info-section upload-info-section"> 
-                                        <h4>Instruções:</h4>
-                                        <p>Arraste e solte <strong>múltiplos arquivos</strong> ou uma <strong>pasta inteira</strong>
-                                            na área acima, ou utilize o botão 'Selecionar Arquivo'.</p>
-                                        <p>Formatos aceitos: Excel (.xlsx, .xls) e CSV</p>
-                                        <p class="upload-warning-text">
-                                            Aguarde a mensagem de "Arquivos carregados" ou "Falha no carregamento"
-                                            antes de interagir com as outras abas.
-                                        </p>
-                                        <div style="border-top:1px solid rgba(255,255,255,0.1);margin-top:14px;padding-top:14px">
-                                            <h4 style="margin:0 0 8px"><i class="fas fa-database"></i> Cache Offline (PWA)</h4>
-                                            <p style="font-size:13px;margin:0 0 10px;opacity:0.8">
-                                                Salve um snapshot JSON no seu dispositivo. Na próxima abertura sem internet,
-                                                o app carrega instantaneamente com os dados salvos.
-                                            </p>
-                                            <div style="display:flex;gap:8px;flex-wrap:wrap">
-                                                <button onclick="window.agriculturalDashboard && window.agriculturalDashboard.exportarSnapshotJSON()"
-                                                    style="background:#2d7d32;color:#fff;border:none;border-radius:8px;
-                                                           padding:10px 16px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px">
-                                                    <i class="fas fa-download"></i> Baixar Snapshot JSON
-                                                </button>
-                                                <label style="background:#1565c0;color:#fff;border:none;border-radius:8px;
-                                                              padding:10px 16px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px">
-                                                    <i class="fas fa-upload"></i> Importar Snapshot JSON
-                                                    <input type="file" accept=".json" hidden 
-                                                        onchange="window.agriculturalDashboard && window.agriculturalDashboard.importarSnapshotJSON(this.files[0]).then(()=>this.value='')">
-                                                </label>
-                                            </div>
-                                        </div>
-                                    </div>
+                              <!-- MÓDULO: Upload de Dados -->
+                              <div class="gc-module">
+                                <div class="gc-module-header">
+                                  <div class="gc-module-icon blue"><i class="fas fa-cloud-upload-alt"></i></div>
+                                  <div>
+                                    <p class="gc-module-title">Carregamento de Dados</p>
+                                    <p class="gc-module-sub">Excel · CSV · Pasta completa</p>
+                                  </div>
                                 </div>
-                                
-                                <div class="analytics-card glass-card half-width hover-zoom-card">
-                                    <div class="card-header">
-                                        <h3><i class="fas fa-clipboard-list"></i> Relatórios de Configuração</h3>
-                                    </div>
-                                    <div class="mini-list">
-                                        <p>Status de Conexão: <span class="success-color-bold">ATIVO</span></p>
-                                        <p>Usuário: <span id="current-user-email" class="primary-color">-</span></p>
-                                        <p>Última Configuração: <span class="primary-color">v1.3.0 - 2025-12-18</span></p>
-                                    </div>
+                                <div class="gc-module-body">
+                                  <div class="gc-dropzone" id="dropzoneCard"
+                                       onclick="document.getElementById('fileInput').click()"
+                                       ondragover="event.preventDefault();this.classList.add('drag-over')"
+                                       ondragleave="this.classList.remove('drag-over')"
+                                       ondrop="this.classList.remove('drag-over')">
+                                    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" multiple webkitdirectory directory hidden>
+                                    <i class="fas fa-cloud-upload-alt"></i>
+                                    <p>Arraste arquivos ou pastas aqui</p>
+                                    <button class="gc-btn primary" onclick="event.stopPropagation();document.getElementById('fileInput').click()">
+                                      <i class="fas fa-file-import"></i> Selecionar
+                                    </button>
+                                    <div class="gc-dz-file-info" id="fileInfo">Aguardando arquivo...</div>
+                                  </div>
+                                  <p style="font-size:.75rem;color:var(--text-secondary);margin:10px 0 0;line-height:1.5;">
+                                    Formatos: <strong>.xlsx .xls .csv</strong> · Aguarde confirmação antes de navegar.
+                                  </p>
                                 </div>
-                            </div>
+                              </div>
+
+                              <!-- MÓDULO: Cache Offline -->
+                              <div class="gc-module">
+                                <div class="gc-module-header">
+                                  <div class="gc-module-icon green"><i class="fas fa-database"></i></div>
+                                  <div>
+                                    <p class="gc-module-title">Cache Offline (PWA)</p>
+                                    <p class="gc-module-sub">Snapshot local para uso sem internet</p>
+                                  </div>
+                                </div>
+                                <div class="gc-module-body">
+                                  <p class="gc-snapshot-desc">
+                                    Salve um snapshot JSON no dispositivo. Na próxima abertura sem internet o app carrega instantaneamente com os últimos dados salvos.
+                                  </p>
+                                  <div class="gc-btn-row">
+                                    <button class="gc-btn success" onclick="window.agriculturalDashboard && window.agriculturalDashboard.exportarSnapshotJSON()">
+                                      <i class="fas fa-download"></i> Baixar Snapshot
+                                    </button>
+                                    <label class="gc-btn info" style="cursor:pointer">
+                                      <i class="fas fa-upload"></i> Importar Snapshot
+                                      <input type="file" accept=".json" hidden
+                                        onchange="window.agriculturalDashboard && window.agriculturalDashboard.importarSnapshotJSON(this.files[0]).then(()=>this.value='')">
+                                    </label>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <!-- MÓDULO: Modo TV / Apresentação -->
+                              <div class="gc-module">
+                                <div class="gc-module-header">
+                                  <div class="gc-module-icon purple"><i class="fas fa-tv"></i></div>
+                                  <div>
+                                    <p class="gc-module-title">Modo Apresentação</p>
+                                    <p class="gc-module-sub">TV · Quiosque · Painel rotativo</p>
+                                  </div>
+                                </div>
+                                <div class="gc-module-body">
+                                  <div class="gc-timer-row">
+                                    <label>Tempo por slide (seg):</label>
+                                    <input type="number" id="presentation-timer" value="20" min="5" class="gc-timer-input">
+                                  </div>
+                                  <div id="presentation-tab-checkboxes" style="margin-bottom:12px;"></div>
+                                  <button class="gc-btn amber" id="presentation-toggle-btn" style="width:100%;justify-content:center;">
+                                    <i class="fas fa-play-circle"></i> INICIAR APRESENTAÇÃO
+                                  </button>
+                                </div>
+                              </div>
+
+                              <!-- MÓDULO: Status do Sistema -->
+                              <div class="gc-module">
+                                <div class="gc-module-header">
+                                  <div class="gc-module-icon amber"><i class="fas fa-heartbeat"></i></div>
+                                  <div>
+                                    <p class="gc-module-title">Status do Sistema</p>
+                                    <p class="gc-module-sub">Conexão · Sessão · Versão</p>
+                                  </div>
+                                </div>
+                                <div class="gc-module-body">
+                                  <div class="gc-stat-list">
+                                    <div class="gc-stat-item">
+                                      <span class="gc-stat-label"><i class="fas fa-wifi" style="margin-right:6px;opacity:.7"></i>Conexão Firebase</span>
+                                      <span class="gc-stat-val ok">● ATIVO</span>
+                                    </div>
+                                    <div class="gc-stat-item">
+                                      <span class="gc-stat-label"><i class="fas fa-user" style="margin-right:6px;opacity:.7"></i>Usuário</span>
+                                      <span class="gc-stat-val pri" id="gc-user-badge">—</span>
+                                    </div>
+                                    <div class="gc-stat-item">
+                                      <span class="gc-stat-label"><i class="fas fa-code-branch" style="margin-right:6px;opacity:.7"></i>Versão</span>
+                                      <span class="gc-stat-val pur">v7.2.1 · 2026-03-26</span>
+                                    </div>
+                                    <div class="gc-stat-item">
+                                      <span class="gc-stat-label"><i class="fas fa-sync" style="margin-right:6px;opacity:.7"></i>Última sync</span>
+                                      <span class="gc-stat-val" id="gc-last-sync" style="color:var(--text);">—</span>
+                                    </div>
+                                  </div>
+                                  <div class="gc-btn-row" style="margin-top:14px;">
+                                    <button class="gc-btn ghost" onclick="window.agriculturalDashboard && window.agriculturalDashboard.logout && window.agriculturalDashboard.logout()">
+                                      <i class="fas fa-sign-out-alt"></i> Sair
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+
+                            </div><!-- /gc-grid -->
+                          </div><!-- /gc-root -->
+
+                          <script>
+                          (function(){
+                            // Sync user badge + last sync
+                            function updateGcStatus(){
+                              var u = document.getElementById('current-user-email');
+                              var b = document.getElementById('gc-user-badge');
+                              if(u && b) b.textContent = u.textContent || '—';
+                              var s = document.getElementById('gc-last-sync');
+                              if(s) s.textContent = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+                            }
+                            setTimeout(updateGcStatus, 800);
+                            setInterval(updateGcStatus, 30000);
+                          })();
+                          </script>
+
                         </div>
                         
                         <div id="tab-usuarios" class="tab-pane">
-                            <div class="sub-tabs-nav">
-                                <button class="tab-button active" onclick="if(window.agriculturalDashboard) window.agriculturalDashboard.showSubTab('subtab-gerenciar-acesso', this)">
-                                    <i class="fas fa-users-cog"></i> Gerenciar Acesso
-                                </button>
-                                <button class="tab-button" onclick="if(window.agriculturalDashboard) window.agriculturalDashboard.showSubTab('subtab-solicitacoes', this)">
-                                    <i class="fas fa-bell"></i> Solicitações (<span id="requests-count">0</span>)
-                                </button>
-                            </div>
-                            
-                            <div class="tabs-content-sub">
-                                <div id="subtab-gerenciar-acesso" class="tab-pane-sub active">
-                                    <div class="analytics-row">
-                                        <div class="analytics-card glass-card full-width hover-zoom-card">
-                                            <div class="card-header">
-                                                <h3><i class="fas fa-user-lock"></i> Gestão de Usuários (Login por Apelido)</h3>
-                                                <button class="btn-primary" onclick="window.agriculturalDashboard.openUserModal()">
-                                                    <i class="fas fa-plus"></i> Novo Usuário
-                                                </button>
-                                            </div>
-                                            <div id="user-management-container" class="meta-table-wrapper">
-                                                <p>Carregando dados de usuários...</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                          <style>
+                          /* ── Aba Usuários: Futuristic Control ── */
+                          .gu-tab-root { display:flex; flex-direction:column; gap:18px; font-family:'Segoe UI',system-ui,sans-serif; }
+                          .gu-tab-header {
+                            display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;
+                            background:linear-gradient(135deg,rgba(123,97,255,.07),rgba(0,212,255,.07));
+                            border:1px solid rgba(0,212,255,.15); border-radius:14px; padding:16px 20px;
+                          }
+                          .gu-tab-header-left h2 {
+                            margin:0 0 3px; font-size:1.15rem; font-weight:800;
+                            background:linear-gradient(135deg,#7B61FF,#00D4FF);
+                            -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+                          }
+                          .gu-tab-header-left p { margin:0; font-size:.78rem; color:var(--text-secondary); }
+                          .gu-tab-header-actions { display:flex; gap:8px; flex-wrap:wrap; }
+                          .gu-add-btn {
+                            display:inline-flex; align-items:center; gap:7px;
+                            padding:9px 18px; border-radius:10px; font-size:.82rem; font-weight:700;
+                            background:linear-gradient(135deg,#7B61FF,#00D4FF); color:#fff; border:none; cursor:pointer;
+                            transition:opacity .18s, transform .18s; white-space:nowrap;
+                          }
+                          .gu-add-btn:hover { opacity:.88; transform:translateY(-1px); }
 
-                                <div id="subtab-solicitacoes" class="tab-pane-sub">
-                                    <div class="analytics-row">
-                                        <div class="analytics-card glass-card full-width hover-zoom-card">
-                                            <div class="card-header">
-                                                <h3><i class="fas fa-user-plus"></i> Solicitações Pendentes de Cadastro</h3>
-                                            </div>
-                                            <div id="registration-requests-container" class="meta-table-wrapper">
-                                                <p>Nenhuma solicitação pendente.</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                          /* Sub-nav pills */
+                          .gu-subnav {
+                            display:flex; gap:6px; padding:4px;
+                            background:rgba(0,0,0,.15); border-radius:12px;
+                            border:1px solid var(--border-color,rgba(255,255,255,.08));
+                            width:fit-content;
+                          }
+                          .gu-subnav-btn {
+                            display:inline-flex; align-items:center; gap:6px;
+                            padding:7px 16px; border-radius:9px; font-size:.8rem; font-weight:700;
+                            background:transparent; color:var(--text-secondary); border:none; cursor:pointer;
+                            transition:all .18s;
+                          }
+                          .gu-subnav-btn.active, .gu-subnav-btn:hover {
+                            background:rgba(0,212,255,.12); color:#00D4FF;
+                          }
+                          .gu-badge-count {
+                            background:rgba(239,68,68,.2); color:#f87171;
+                            border:1px solid rgba(239,68,68,.3); border-radius:10px;
+                            padding:1px 7px; font-size:.68rem; font-weight:800;
+                          }
+                          .gu-badge-count.zero { background:rgba(255,255,255,.06); color:var(--text-secondary); border-color:transparent; }
+
+                          /* Panels */
+                          .gu-panel { display:none; }
+                          .gu-panel.active { display:block; animation:gu-fade .2s ease; }
+                          @keyframes gu-fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+                          /* Requests panel */
+                          .gu-req-empty {
+                            text-align:center; padding:4rem 1rem;
+                            background:var(--card-bg,rgba(255,255,255,.04));
+                            border:1px dashed var(--border-color,rgba(255,255,255,.1));
+                            border-radius:14px;
+                          }
+                          .gu-req-empty i { font-size:3rem; opacity:.25; display:block; margin-bottom:1rem; color:var(--text); }
+                          </style>
+
+                          <div class="gu-tab-root">
+
+                            <!-- Header -->
+                            <div class="gu-tab-header">
+                              <div class="gu-tab-header-left">
+                                <h2><i class="fas fa-user-shield" style="-webkit-text-fill-color:initial;color:#7B61FF;margin-right:6px;font-size:1rem;"></i>Gestão de Acesso</h2>
+                                <p>Controle de usuários, papéis e solicitações pendentes</p>
+                              </div>
+                              <div class="gu-tab-header-actions">
+                                <button class="gu-add-btn" onclick="window.agriculturalDashboard.openUserModal()">
+                                  <i class="fas fa-user-plus"></i> Novo Usuário
+                                </button>
+                              </div>
                             </div>
+
+                            <!-- Sub-nav -->
+                            <div class="gu-subnav">
+                              <button class="gu-subnav-btn active" id="gu-nav-usuarios"
+                                onclick="guSwitchPanel('usuarios', this)">
+                                <i class="fas fa-users-cog"></i> Usuários
+                              </button>
+                              <button class="gu-subnav-btn" id="gu-nav-solicitacoes"
+                                onclick="guSwitchPanel('solicitacoes', this)">
+                                <i class="fas fa-bell"></i> Solicitações
+                                <span class="gu-badge-count zero" id="requests-count">0</span>
+                              </button>
+                            </div>
+
+                            <!-- Panel: Usuários -->
+                            <div class="gu-panel active" id="gu-panel-usuarios">
+                              <div id="user-management-container">
+                                <div style="text-align:center;padding:3rem;color:var(--text-secondary);">
+                                  <i class="fas fa-spinner fa-spin" style="font-size:2rem;"></i>
+                                  <p style="margin-top:1rem;">Carregando usuários...</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <!-- Panel: Solicitações -->
+                            <div class="gu-panel" id="gu-panel-solicitacoes">
+                              <div id="registration-requests-container">
+                                <div class="gu-req-empty">
+                                  <i class="fas fa-inbox"></i>
+                                  <h3 style="margin:0 0 .5rem;color:var(--text);">Nenhuma solicitação pendente</h3>
+                                  <p style="color:var(--text-secondary);font-size:.85rem;">Quando alguém solicitar acesso, aparecerá aqui.</p>
+                                </div>
+                              </div>
+                            </div>
+
+                          </div><!-- /gu-tab-root -->
+
+                          <script>
+                          function guSwitchPanel(name, btn) {
+                            document.querySelectorAll('.gu-panel').forEach(p => p.classList.remove('active'));
+                            document.querySelectorAll('.gu-subnav-btn').forEach(b => b.classList.remove('active'));
+                            var panel = document.getElementById('gu-panel-' + name);
+                            if (panel) panel.classList.add('active');
+                            if (btn) btn.classList.add('active');
+                            // Update badge style on requests
+                            var cnt = document.getElementById('requests-count');
+                            if (cnt) {
+                              var n = parseInt(cnt.textContent) || 0;
+                              cnt.className = 'gu-badge-count' + (n > 0 ? '' : ' zero');
+                            }
+                          }
+                          // Keep showSubTab compatible for backward-compat calls
+                          if (window.agriculturalDashboard) {
+                            var _orig = window.agriculturalDashboard.showSubTab;
+                            window.agriculturalDashboard.showSubTab = function(id, btn) {
+                              if (id === 'subtab-gerenciar-acesso') { guSwitchPanel('usuarios', document.getElementById('gu-nav-usuarios')); }
+                              else if (id === 'subtab-solicitacoes') { guSwitchPanel('solicitacoes', document.getElementById('gu-nav-solicitacoes')); }
+                              else if (_orig) _orig.call(this, id, btn);
+                            };
+                          }
+                          // Auto-update badge when count changes
+                          var _cntEl = document.getElementById('requests-count');
+                          if (_cntEl) {
+                            var _obs = new MutationObserver(function(){
+                              var n = parseInt(_cntEl.textContent)||0;
+                              _cntEl.className = 'gu-badge-count' + (n>0?'':' zero');
+                            });
+                            _obs.observe(_cntEl, {childList:true, characterData:true, subtree:true});
+                          }
+                          </script>
                         </div>
                         
                         <div id="tab-moagem" class="tab-pane">

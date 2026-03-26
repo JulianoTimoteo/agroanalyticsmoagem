@@ -41,20 +41,20 @@
   const META_KML   = 1.10;
   const META_RENG  = 77;
   const META_DISP  = 86;
-  const ANOMALY_KML = 10; // Litros/Ton > 10 = defeito de sensor ou apontamento
+  const ANOMALY_LITTON = 10; // Litros/Ton > 10 = defeito de sensor ou apontamento de cana
 
-  // Renderiza célula Km/L com alerta ⚠️ animado quando há anomalia de sensor
-  function kmlCell(val, cssClass) {
-    if (!val || val <= 0) return '<span class="c-nd">—</span>';
-    const formatted = _fmt(val, 2);
-    if (val > ANOMALY_KML) {
+  // Renderiza célula Km/L (valor real) com alerta ⚠️ se litTon indica sensor defeituoso
+  function kmlCell(kmLval, litTonVal, cssClass) {
+    if (!kmLval || kmLval <= 0) return '<span class="c-nd">—</span>';
+    const formatted = _fmt(kmLval, 2);
+    if (litTonVal && litTonVal > ANOMALY_LITTON) {
+      const litFormatted = _fmt(litTonVal, 2);
       return `<span class="vcc-anomaly-wrap">
-        <span class="vcc-anomaly">
-          <span class="vcc-anomaly-icon" title="Dado anômalo">⚠️</span>${formatted}
-        </span>
+        <span class="c-${cssClass}">${formatted}</span>
+        <span class="vcc-anomaly-icon" title="Sensor defeituoso">⚠️</span>
         <span class="vcc-anomaly-tooltip">
           <b>Dado anômalo — verificar sensor</b><br>
-          Litros/Ton = ${formatted} (limite aceitável: ${ANOMALY_KML})<br>
+          Litros/Ton = ${litFormatted} (limite: ${ANOMALY_LITTON})<br>
           Possível causa: produção (Ton) não integrada<br>ou sensor de fluxo com defeito.
         </span>
       </span>`;
@@ -111,10 +111,14 @@
     return {
       equip   : String(r['Equip'] || '').trim(),
       tonCana : _p(r['Ton. Cana']),
-      horas   : _p(r['Horas']),
+      // 'Km' é o nome correto (bot v7.2+); fallback p/ 'Horas' (nome antigo incorreto)
+      km      : _p(r['Km'] || r['Horas']),
       comb    : _p(r['Combustivel']),
       diasTrab: _p(r['Dias Trab.']),
-      litTon  : _p(r['Litros/Ton']),   // Km/L (campo mapeado pelo sistema)
+      // 'Km/Litros' é o nome correto (bot v7.2+); fallback p/ 'Litros/Hr' (nome antigo)
+      kmL     : _p(r['Km/Litros'] || r['Litros/Hr']),
+      // Litros/Ton permanece para detecção de anomalia de sensor (NÃO é Km/L)
+      litTon  : _p(r['Litros/Ton']),
       rEnerg  : _p(r['R. Energetico']),
       disp    : _p(r['Disp %']),
       periodo : String(r['Periodo'] || ''),
@@ -173,6 +177,14 @@
         return;
       }
 
+      // ── Injeta CSS no <head> (sempre remove e reinjecta para garantir tema correto) ──
+      const oldStyle = document.getElementById('vcc4-styles');
+      if (oldStyle) oldStyle.remove();
+      const styleEl = document.createElement('style');
+      styleEl.id = 'vcc4-styles';
+      styleEl.textContent = this._cssText();
+      document.head.appendChild(styleEl);
+
       try {
         const d1Rows  = this._normalizeInput(d1Raw);
         const acmRows = this._normalizeInput(acmRaw);
@@ -188,7 +200,7 @@
           console.warn('[ConsumoCam] acmRaw type:', typeof acmRaw, Array.isArray(acmRaw) ? `array[${acmRaw.length}]` : '');
         }
 
-        el.innerHTML = this._css() + this._html();
+        el.innerHTML = this._html();
         this._bindTooltips(el);
 
       } catch (err) {
@@ -238,9 +250,8 @@
     }
 
     // ── CSS ──────────────────────────────────────────────────────
-    _css() {
-      if (document.getElementById('vcc4-styles')) return '';
-      return `<style id="vcc4-styles">
+    _cssText() {
+      return `
 /* ── Reset scope ── */
 .vcc-root { font-family: inherit; }
 
@@ -291,6 +302,25 @@ body.light-mode .vcc-root {
 
 /* ── Cards de KPIs ── */
 .vcc-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:18px; }
+
+/* ── Mobile: 2 cards por linha + hint de rotação ── */
+@media (max-width:600px) {
+  .vcc-cards { grid-template-columns:repeat(2,1fr); gap:8px; }
+  .vcc-card { padding:10px 12px; }
+  .vcc-card-val { font-size:1.1rem; }
+  .vcc-landscape-hint {
+    display:flex; align-items:center; gap:6px;
+    font-size:.72rem; color:#94a3b8;
+    background:rgba(56,189,248,.07); border:1px solid rgba(56,189,248,.15);
+    border-radius:8px; padding:6px 12px; margin-bottom:8px;
+    animation:vcc-pulse-hint 2.5s ease-in-out infinite;
+  }
+  @keyframes vcc-pulse-hint{0%,100%{opacity:1}50%{opacity:.55}}
+  .vcc-landscape-hint i { font-size:1rem; color:#38bdf8; }
+}
+@media (min-width:601px) {
+  .vcc-landscape-hint { display:none; }
+}
 .vcc-card  {
   background: var(--vcc-bg-card);
   border: 1px solid var(--vcc-border);
@@ -443,20 +473,21 @@ body.light-mode .vcc-root {
   display:inline-flex;align-items:center;justify-content:center;cursor:help; }
 .vcc-tooltip  {
   visibility:hidden; opacity:0; pointer-events:none;
-  position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%);
+  position:fixed; /* fixed = always in viewport */
   background:#1e293b; color:#e2e8f0; border:1px solid #334155;
   font-size:.72rem; padding:7px 10px; border-radius:7px;
-  white-space:normal; min-width:200px; max-width:280px; z-index:999; box-shadow:0 4px 16px rgba(0,0,0,.4);
+  white-space:normal; min-width:200px; max-width:280px; z-index:9999; box-shadow:0 4px 16px rgba(0,0,0,.4);
   transition: opacity .15s;
 }
 [data-theme="light"] .vcc-tooltip, .light .vcc-tooltip { background:#1e293b; color:#e2e8f0; }
 .vcc-tooltip-wrap:hover .vcc-tooltip  { visibility:visible; opacity:1; }
 .vcc-tooltip::after {
-  content:''; position:absolute; top:100%; left:50%; transform:translateX(-50%);
-  border:5px solid transparent; border-top-color:#1e293b;
+  content:''; position:absolute; left:50%; transform:translateX(-50%);
+  border:5px solid transparent;
 }
-</style>`;
-    }
+.vcc-tooltip.tip-above::after { top:100%; border-top-color:#1e293b; }
+.vcc-tooltip.tip-below::after { bottom:100%; border-bottom-color:#1e293b; }
+`;}
 
     // ── HTML principal ────────────────────────────────────────────
     _html() {
@@ -467,9 +498,11 @@ body.light-mode .vcc-root {
       const acmVals = [...acm.values()];
       const d1Vals  = [...d1.values()];
 
-      // Km/L = Litros/Ton (campo mapeado)
-      const acmKmlArr = acmVals.filter(f=>f.litTon>0).map(f=>f.litTon);
-      const d1KmlArr  = d1Vals.filter(f=>f.litTon>0).map(f=>f.litTon);
+      // Km/L real = campo Km/Litros do PDF (armazenado como 'Litros/Hr' no bot antigo, 'Km/Litros' no bot v7.2+)
+      // Exclui apenas valores acima de 5 km/L (impossível para caminhão de cana = sensor quebrado)
+      const ANOMALY_KML_FILTER = 5;
+      const acmKmlArr = acmVals.filter(f=>f.kmL>0 && f.kmL<ANOMALY_KML_FILTER).map(f=>f.kmL);
+      const d1KmlArr  = d1Vals.filter(f=>f.kmL>0  && f.kmL<ANOMALY_KML_FILTER).map(f=>f.kmL);
       const avg = arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null;
 
       const kmlAcm = avg(acmKmlArr);
@@ -479,10 +512,9 @@ body.light-mode .vcc-root {
       const combAcm = acmVals.reduce((s,f)=>s+f.comb,0);
       const combD1  = d1Vals.reduce((s,f)=>s+f.comb,0);
 
-      // Horas → proxy de km (Horas × velocidade média ~50km/h para cálculo de km rodados)
-      // Na verdade Horas no campo colCam = km rodados (conforme mapeamento do sistema)
-      const kmAcm = acmVals.reduce((s,f)=>s+f.horas,0);
-      const kmD1  = d1Vals.reduce((s,f)=>s+f.horas,0);
+      // Km rodados totais (campo 'Km' no bot v7.2+, 'Horas' no bot antigo)
+      const kmAcm = acmVals.reduce((s,f)=>s+f.km,0);
+      const kmD1  = d1Vals.reduce((s,f)=>s+f.km,0);
 
       // R. Energético
       const acmRengArr = acmVals.filter(f=>f.rEnerg>0).map(f=>f.rEnerg);
@@ -511,6 +543,10 @@ body.light-mode .vcc-root {
 
   ${this._cards({ kmlD1, kmlAcm, combD1, combAcm, kmD1, kmAcm, rengD1, rengAcm, dispD1, dispAcm })}
 
+  <div class="vcc-landscape-hint">
+    <i class="fas fa-mobile-alt" style="transform:rotate(90deg)"></i>
+    Vire o celular para melhor visualização
+  </div>
   <div class="vcc-wrap">
     <table class="vcc-table">
       <thead>
@@ -576,7 +612,7 @@ body.light-mode .vcc-root {
     <div class="vcc-card-label">
       <span class="vcc-tooltip-wrap">Km / Litro
         <span class="vcc-tip-icon">?</span>
-        <span class="vcc-tooltip">Eficiência de combustível<br>Campo "Litros/Ton" mapeado como Km/L<br>pelo sistema de telemetria</span>
+        <span class="vcc-tooltip">Eficiência de combustível<br>Campo "Km/Litros" do PDF<br>(bot v7.2+: coluna Km/Litros | bot antigo: coluna Litros/Hr)</span>
       </span>
     </div>
     <div class="vcc-card-meta">Meta: <b>${META_KML.toFixed(2)} km/L</b></div>
@@ -715,16 +751,18 @@ body.light-mode .vcc-root {
         }
 
         // ── Linha DIA ──
-        const dKml  = d ? d.litTon  : null;
-        const dComb = d ? d.comb    : null;
-        const dReng = d ? d.rEnerg  : null;
-        const dDisp = d ? d.disp    : null;
+        const dKml   = d ? d.kmL    : null;
+        const dLitT  = d ? d.litTon : 0;
+        const dComb  = d ? d.comb   : null;
+        const dReng  = d ? d.rEnerg : null;
+        const dDisp  = d ? d.disp   : null;
 
         // ── Linha ACM ──
-        const aKml  = a ? a.litTon  : null;
-        const aComb = a ? a.comb    : null;
-        const aReng = a ? a.rEnerg  : null;
-        const aDisp = a ? a.disp    : null;
+        const aKml   = a ? a.kmL    : null;
+        const aLitT  = a ? a.litTon : 0;
+        const aComb  = a ? a.comb   : null;
+        const aReng  = a ? a.rEnerg : null;
+        const aDisp  = a ? a.disp   : null;
 
         const bKmlD  = dKml  && dKml>0  ? badge(dKml, META_KML)   : 'nd';
         const bKmlA  = aKml  && aKml>0  ? badge(aKml, META_KML)   : 'nd';
@@ -737,14 +775,14 @@ body.light-mode .vcc-root {
 <tr class="vcc-period-dia">
   <td rowspan="2" style="border-right:1px solid var(--vcc-border)">${equip}</td>
   <td><span class="vcc-badge dia">Dia</span></td>
-  <td>${kmlCell(dKml, bKmlD)}</td>
+  <td>${kmlCell(dKml, dLitT, bKmlD)}</td>
   <td class="c-nd">${dComb && dComb>0 ? _fmtInt(dComb)+' L' : '—'}</td>
   <td class="c-${bRengD}">${dReng && dReng>0 ? _fmt(dReng,1) : '—'}</td>
   <td class="c-${bDispD}">${dDisp && dDisp>0 ? _fmt(dDisp,1)+'%' : '—'}</td>
 </tr>
 <tr class="vcc-period-acm">
   <td><span class="vcc-badge acm">Acm</span></td>
-  <td>${kmlCell(aKml, bKmlA)}</td>
+  <td>${kmlCell(aKml, aLitT, bKmlA)}</td>
   <td class="c-nd">${aComb && aComb>0 ? _fmtInt(aComb)+' L' : '—'}</td>
   <td class="c-${bRengA}">${aReng && aReng>0 ? _fmt(aReng,1) : '—'}</td>
   <td class="c-${bDispA}">${aDisp && aDisp>0 ? _fmt(aDisp,1)+'%' : '—'}</td>
@@ -756,7 +794,36 @@ body.light-mode .vcc-root {
 
     // ── Tooltips hover (fallback JS) ──────────────────────────────
     _bindTooltips(el) {
-      // CSS hover já resolve — este método é placeholder para futura interatividade
+      // Smart tooltip: posiciona via fixed coords para nunca cortar na borda
+      el.querySelectorAll('.vcc-tooltip-wrap').forEach(wrap => {
+        const tip = wrap.querySelector('.vcc-tooltip');
+        if (!tip) return;
+        wrap.addEventListener('mouseenter', () => {
+          const rect = wrap.getBoundingClientRect();
+          const tipH = 120; // estimativa altura do tooltip
+          const spaceAbove = rect.top;
+          const spaceBelow = window.innerHeight - rect.bottom;
+          if (spaceAbove > tipH || spaceAbove >= spaceBelow) {
+            // mostra acima
+            tip.classList.remove('tip-below');
+            tip.classList.add('tip-above');
+            tip.style.top = '';
+            tip.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
+          } else {
+            // mostra abaixo
+            tip.classList.remove('tip-above');
+            tip.classList.add('tip-below');
+            tip.style.bottom = '';
+            tip.style.top = (rect.bottom + 6) + 'px';
+          }
+          // centraliza horizontalmente
+          const tipW = 240;
+          let left = rect.left + rect.width / 2 - tipW / 2;
+          left = Math.max(8, Math.min(left, window.innerWidth - tipW - 8));
+          tip.style.left = left + 'px';
+          tip.style.transform = 'none';
+        });
+      });
     }
   }
 

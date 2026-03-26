@@ -61,6 +61,26 @@ class VisualizerConsumo {
 
         /* Cards KPI */
         .vc-hero { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:15px; }
+
+        /* ── Mobile: 2 cards por linha ── */
+        @media (max-width: 600px) {
+          .vc-hero { grid-template-columns: repeat(2, 1fr); gap:10px; }
+          .vc-kpi-title { font-size:0.75rem; }
+          .vc-kpi { padding:10px 12px; }
+          .vc-table-wrap { position:relative; }
+          .vc-landscape-hint {
+            display:flex; align-items:center; gap:6px;
+            font-size:0.72rem; color:#94a3b8;
+            background:rgba(56,189,248,0.07); border:1px solid rgba(56,189,248,0.15);
+            border-radius:8px; padding:6px 12px; margin-bottom:8px;
+            animation: vc-pulse-hint 2.5s ease-in-out infinite;
+          }
+          @keyframes vc-pulse-hint { 0%,100%{opacity:1} 50%{opacity:0.55} }
+          .vc-landscape-hint i { font-size:1rem; color:#38bdf8; }
+        }
+        @media (min-width: 601px) {
+          .vc-landscape-hint { display:none; }
+        }
         .vc-kpi {
             background: var(--vc-bg-card); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
             border: 1px solid var(--vc-bd-card); border-radius:12px; padding:18px;
@@ -672,6 +692,10 @@ class VisualizerConsumo {
             <div class="vc-section-title" style="margin-top:10px;">
                 <i class="fas fa-layer-group"></i>
                 Detalhamento Operacional por Equipamento
+            </div>
+            <div class="vc-landscape-hint">
+                <i class="fas fa-mobile-alt" style="transform:rotate(90deg)"></i>
+                Vire o celular para melhor visualização
             </div>
             <div class="vc-table-wrap">
                 <table class="vc-table">
