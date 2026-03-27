@@ -254,7 +254,7 @@ if (typeof VisualizerKPIs === 'undefined') {
 
         // ── TOOLTIP DESCRIPTIONS ─────────────────────────────────────────────────
         _TOOLTIPS = {
-            acumuladoSafra:  { title: 'Acumulado Safra',         desc: 'Total de toneladas processadas desde o início da safra.' },
+            acumuladoSafra:  { title: 'Acumulado Safra',         desc: 'Total de toneladas processadas desde o início da safra.' }, // desc updated dynamically
             totalViagens:    { title: 'Viagens',                 desc: 'Número total de viagens realizadas no dia agrícola. Pró = frota própria, Terc = terceiros.' },
             taxaAnalise:     { title: 'Análise',                 desc: 'Percentual de cargas analisadas. Calculado como: cargas com SIM ÷ total de cargas.' },
             avgPotencial3h:  { title: 'Potencial',               desc: 'Média do potencial de moagem (t/h) das últimas 3 horas.' },
@@ -377,6 +377,15 @@ if (typeof VisualizerKPIs === 'undefined') {
 
             // 1. ACUMULADO SAFRA
             const acumuladoSafra = this._toNum(analysis.acumuladoSafra || 0);
+            // Obtém info de safra do analyzer (se disponível)
+            const _safraI = window.agriculturalDashboard && window.agriculturalDashboard.analyzer && window.agriculturalDashboard.analyzer._safraInfo;
+            const _safraNome = _safraI ? (_safraI.safraAtual || '25/26') : '25/26';
+            const _safraAnt  = _safraI && _safraI.hasSafra2627 && _safraI.total2526 > 0
+                ? '  |  Safra 25/26 (encerrada): ' + _safraI.total2526.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' t'
+                : '';
+            // Atualiza descrição do tooltip dinamicamente
+            this._TOOLTIPS.acumuladoSafra.desc = `Safra ${_safraNome} — Total processado desde o início da safra.${_safraAnt}`;
+            this._TOOLTIPS.acumuladoSafra.title = `Acumulado Safra ${_safraNome}`;
             this._updateCard('acumuladoSafra', {
                 value: acumuladoSafra,
                 unit: 'ton',
@@ -556,13 +565,15 @@ if (typeof VisualizerKPIs === 'undefined') {
                 } else if (item.frente) {
                     secondaryHTML = `<span style="font-size:0.8em;font-weight:500;color:var(--text-secondary);">Fr. ${this._safeHTML(item.frente)}</span>`;
                 }
+                const pesoFmt = typeof Utils!=='undefined' ? Utils.formatWeight(peso) : peso.toLocaleString();
                 li.innerHTML = `
-                    <div style="display:flex;flex-direction:column;align-items:flex-start;min-width:0;">
-                        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i+1}º ${safeCodigo}</span>
+                    <div style="display:flex;flex-direction:column;align-items:flex-start;min-width:0;position:relative;">
+                        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;border-bottom:1px dashed rgba(255,255,255,.2);"
+                              title="${safeCodigo}">${i+1}º ${safeCodigo}</span>
                         ${secondaryHTML}
                     </div>
                     <span style="flex-shrink:0;font-size:0.9em;color:var(--primary);font-weight:700;white-space:nowrap;">
-                        ${typeof Utils!=='undefined' ? Utils.formatWeight(peso) : peso.toLocaleString()} t
+                        ${pesoFmt} t
                     </span>`;
                 list.appendChild(li);
             });
@@ -578,9 +589,11 @@ if (typeof VisualizerKPIs === 'undefined') {
                 const li = document.createElement('li');
                 li.className = 'top-list-item';
                 const peso = item.value || item.peso || 0;
+                const displayOp = this._safeHTML(item.name||item.codigo);
                 li.innerHTML = `
-                    <div style="display:flex;flex-direction:column;">
-                        <span>${i+1}º ${this._safeHTML(item.name||item.codigo)}</span>
+                    <div style="display:flex;flex-direction:column;min-width:0;">
+                        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;border-bottom:1px dashed rgba(255,255,255,.2);"
+                              title="${displayOp}">${i+1}º ${displayOp}</span>
                         <span style="font-size:0.8em;color:var(--text-secondary);">Frente: ${this._safeHTML(item.frente||'N/A')}</span>
                     </div>
                     <span style="flex-shrink:0;font-weight:700;color:var(--primary);">

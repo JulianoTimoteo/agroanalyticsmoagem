@@ -86,66 +86,93 @@ class VisualizerChartsBase {
     }
 
     // 1. Gráfico de Rosca (Distribuição)
+
+    // ── SHARED DONUT CONFIG (unifies design for fleet + harvest charts) ──
+    // ── CONFIG COMPARTILHADO: design idêntico ao RankingColhedoras._renderDonut ──
+    _buildDonutConfig(propria, terceiros, config) {
+        const total    = propria + terceiros;
+        const isDark   = document.documentElement.getAttribute('data-theme') !== 'light';
+        const fontColor = isDark ? '#F0F0F0' : '#1f2937';
+
+        // Formatação do total no centro — mesma lógica do RankingColhedoras
+        const totalStr = total >= 1000000
+            ? (total / 1000000).toFixed(1) + ' M t'
+            : total >= 1000
+            ? (total / 1000).toFixed(1) + ' k t'
+            : total.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' t';
+
+        const _fmtTon = (v) => (typeof v === 'number' ? v : parseFloat(v) || 0)
+            .toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        return {
+            type: 'doughnut',
+            data: {
+                labels: ['Própria', 'Terceiros'],
+                datasets: [{
+                    data: [propria, terceiros],
+                    backgroundColor: ['rgba(64,128,12,0.75)', 'rgba(255,140,0,0.75)'],
+                    borderColor:     ['#40800c', '#ff8c00'],
+                    borderWidth: 2,
+                    hoverOffset: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                cutout: '68%',
+                animation: {
+                    animateRotate: true,
+                    animateScale: false,
+                    duration: 1200,
+                    easing: 'easeInOutQuart'
+                },
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            color: fontColor,
+                            font: { size: 11, weight: '700' },
+                            padding: 12,
+                            usePointStyle: true,
+                            pointStyle: 'rect',
+                            pointStyleWidth: 12
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => ` ${ctx.label}: ${_fmtTon(ctx.raw)} t (${total > 0 ? ((ctx.raw/total)*100).toFixed(1) : 0}%)`
+                        }
+                    }
+                }
+            },
+            plugins: [{
+                id: 'centerText',
+                beforeDraw(chart) {
+                    const { ctx: c, chartArea: { width, height, left, top } } = chart;
+                    c.save();
+                    const x = left + width / 2, y = top + height / 2;
+                    c.textAlign    = 'center';
+                    c.textBaseline = 'middle';
+                    c.fillStyle    = '#40800c';
+                    c.font         = 'bold 13px "Segoe UI", system-ui, sans-serif';
+                    c.fillText(totalStr, x, y - 8);
+                    c.fillStyle = isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.35)';
+                    c.font      = '11px "Segoe UI", system-ui, sans-serif';
+                    c.fillText('TOTAL', x, y + 10);
+                    c.restore();
+                }
+            }]
+        };
+    }
+
     createFleetChart(fleetData, config) {
         const canvas = document.getElementById('camDistribuicaoChart') || document.getElementById('fleetChart');
         if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        
         if (this.visualizer.charts.fleetChart) { try { this.visualizer.charts.fleetChart.destroy(); } catch(e){} }
-        
-        const propria = Math.round(fleetData?.propria || 0);
+        const propria   = Math.round(fleetData?.propria   || 0);
         const terceiros = Math.round(fleetData?.terceiros || 0);
-        const total = propria + terceiros;
-        
-        if (total === 0) return;
-
-        const percPropria = Math.round((propria / total) * 100);
-        const percTerceiros = Math.round((terceiros / total) * 100);
-        
-        this.visualizer.charts.fleetChart = new Chart(ctx, {
-            type: 'doughnut', 
-            data: { 
-                labels: [`Própria ${percPropria}%`, `Terceiros ${percTerceiros}%`], 
-                datasets: [{ 
-                    data: [propria, terceiros], 
-                    backgroundColor: [config.proprio || '#40800c', config.terceiro || '#FF8C00'], 
-                    borderColor: config.cardColor, 
-                    borderWidth: 2, 
-                    hoverOffset: 10 
-                }] 
-            },
-            plugins: [{ 
-                id: 'centerText', 
-                beforeDraw: (chart) => this._drawCenterText(chart, (typeof Utils !== 'undefined' ? Utils.formatNumber(total) : total) + " t") 
-            }, ChartDataLabels],
-            options: { 
-                responsive: true,
-                maintainAspectRatio: false, 
-                cutout: '65%', 
-                layout: { padding: 20 }, 
-                plugins: { 
-                    legend: { 
-                        position: 'bottom', 
-                        labels: {
-                            color: document.documentElement.getAttribute('data-theme') === 'light'
-                                ? '#1f2937' : '#F0F0F0',
-                            usePointStyle: true,
-                            pointStyle: 'rect',
-                            pointStyleWidth: 12,
-                            padding: 20
-                        }
-                    }, 
-                    datalabels: { 
-                        display: (ctx) => (ctx.dataset.data[ctx.dataIndex] / total) > 0.05, 
-                        color: '#FFF', 
-                        font: { weight: 'bold', size: 14 },
-                        textStrokeColor: '#000',
-                        textStrokeWidth: 2,
-                        formatter: (value) => Math.round((value / total) * 100) + '%'
-                    } 
-                } 
-            }
-        });
+        if (propria + terceiros === 0) return;
+        this.visualizer.charts.fleetChart = new Chart(canvas.getContext('2d'), this._buildDonutConfig(propria, terceiros, config));
     }
 
     createHarvestChart(data, config) {
@@ -168,40 +195,7 @@ class VisualizerChartsBase {
         const percPropria = Math.round((propria / total) * 100);
         const percTerceiros = Math.round((terceiros / total) * 100);
 
-        this.visualizer.charts.harvestChart = new Chart(ctx, {
-            type: 'doughnut',
-            data: { 
-                labels: [`Própria ${percPropria}%`, `Terceiros ${percTerceiros}%`], 
-                datasets: [{ 
-                    data: [propria, terceiros], 
-                    backgroundColor: [config.proprio || '#40800c', config.terceiro || '#FF8C00'], 
-                    borderColor: config.cardColor, 
-                    borderWidth: 2, 
-                    hoverOffset: 10 
-                }] 
-            },
-            plugins: [{ 
-                id: 'centerText', 
-                beforeDraw: (chart) => this._drawCenterText(chart, (typeof Utils !== 'undefined' ? Utils.formatNumber(total) : total) + " t") 
-            }, ChartDataLabels],
-            options: { 
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '65%', 
-                layout: { padding: 20 }, 
-                plugins: { 
-                    legend: { position: 'bottom', labels: { color: config.fontColor, usePointStyle: true, padding: 20 } }, 
-                    datalabels: { 
-                        display: (ctx) => (ctx.dataset.data[ctx.dataIndex] / total) > 0.05,
-                        color: '#FFF', 
-                        font: { weight: 'bold', size: 14 },
-                        textStrokeColor: '#000',
-                        textStrokeWidth: 2,
-                        formatter: (value) => Math.round((value / total) * 100) + '%'
-                    } 
-                } 
-            }
-        });
+        this.visualizer.charts.harvestChart = new Chart(canvas.getContext('2d'), this._buildDonutConfig(propria, terceiros, config));
     }
 
     // 2. Gráfico de Entrega Horária (Caminhões - Empilhado)

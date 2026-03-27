@@ -104,33 +104,42 @@ if (typeof DataAnalyzerKPIs === 'undefined') {
             const prodRows = Array.isArray(productionData) ? productionData : [];
             const acmRows  = Array.isArray(acmSafraData)   ? acmSafraData  : [];
 
-            // Verifica se já tem dados da safra nova (26/27)
+            // PRIORIDADE 1: AcmSafra legado (contém safra 25/26 completa do GAS)
+            // só abandona AcmSafra quando dados de 26/27 aparecerem em produção
+            let total2526 = 0;
+            let total2627 = 0;
+            let rowCount  = 0;
+            let usedAcmLegado = false;
+
+            // Verifica se já tem dados da safra nova (26/27) nos registros de produção
             let hasSafra2627 = false;
             for (const row of prodRows) {
                 const d = _getDate(row);
                 if (d && d >= SAFRA_2627_INI) { hasSafra2627 = true; break; }
             }
 
-            // Acumula produção por safra usando os registros de produção
-            let total2526 = 0;
-            let total2627 = 0;
-            let rowCount  = 0;
-
-            for (const row of prodRows) {
-                if (this.analyzer.isAggregationRow(row)) continue;
-                const peso = _parseNum(
-                    row['Peso Líquido'] || row['Peso Liquido'] || row['PESO LIQUIDO'] ||
-                    row['pesoLiquido']  || row['peso']        || 0
-                );
-                if (peso <= 0) continue;
-                const d = _getDate(row);
-                if (!d) continue;
-                if (d >= SAFRA_2526_INI && d <= SAFRA_2526_FIM) { total2526 += peso; rowCount++; }
-                if (d >= SAFRA_2627_INI)                         { total2627 += peso; rowCount++; }
+            if (hasSafra2627) {
+                // Nova safra começou: acumula 26/27 da produção em tempo real
+                for (const row of prodRows) {
+                    if (this.analyzer.isAggregationRow(row)) continue;
+                    const peso = _parseNum(
+                        row['Peso Líquido'] || row['Peso Liquido'] || row['PESO LIQUIDO'] ||
+                        row['pesoLiquido']  || row['peso']        || 0
+                    );
+                    if (peso <= 0) continue;
+                    const d = _getDate(row);
+                    if (!d) continue;
+                    if (d >= SAFRA_2627_INI) { total2627 += peso; rowCount++; }
+                }
+                // Pega 25/26 do AcmSafra legado (valor congelado)
+                if (acmRows.length > 0) {
+                    usedAcmLegado = true; // calculado abaixo
+                }
             }
 
-            // Fallback: se produção não veio, usa AcmSafra legado
-            if (total2526 === 0 && acmRows.length > 0) {
+            // AcmSafra legado: fonte primária para 25/26 (GAS enviou safra completa)
+            // Entra sempre que AcmSafra existe — seja como valor principal (25/26) ou congelado (para tooltip)
+            if (acmRows.length > 0) {
                 const firstRow = acmRows[0];
                 const keys = Object.keys(firstRow);
                 const possibleCols = ['PESO LIQUIDO','PESO_LIQUIDO','LIQUIDO','LÍQUIDO',
@@ -149,7 +158,9 @@ if (typeof DataAnalyzerKPIs === 'undefined') {
                 }
             }
 
-            // Resultado: se nova safra começou → retorna total da nova; senão, retorna 25/26
+            // Resultado:
+            // - safra 26/27 iniciada → retorna acumulado 26/27 (em tempo real)
+            // - safra 25/26 → retorna total do AcmSafra (completo, vindo do GAS)
             const result = hasSafra2627 ? total2627 : total2526;
 
             console.log(

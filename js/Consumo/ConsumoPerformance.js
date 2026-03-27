@@ -521,9 +521,13 @@ class VisualizerConsumo {
         const horas = this._getHoras(r);
         const comb  = this._getLitrosTotal(r);
 
-        const tmd   = ton > 0 && dias > 0 ? ton / dias : null;
+        // Cap ton at 200,000 t (máximo realista por máquina/safra) — evita valor corrompido
+        const tonSafe = ton > 0 && ton <= 200000 ? ton : 0;
+        const tmd   = tonSafe > 0 && dias > 0 ? Math.min(tonSafe / dias, 5000) : null;
         // Prefer pre-computed column (ColConAcm), fallback to brute calculation
-        const lhr   = this._getPreCalcLhr(r) || (horas > 0 ? comb / horas : null);
+        const _rawLhr = this._getPreCalcLhr(r) || (horas > 0 ? comb / horas : null);
+        // Cap L/h at 200 (max realistic for a large harvester) — evita divisão por horas~0
+        const lhr   = _rawLhr && _rawLhr > 0 && _rawLhr <= 200 ? _rawLhr : null;
         const rawLton = this._getPreCalcLton(r) || (ton > 0 ? comb / ton : null);
         const lton  = rawLton && rawLton > 10 ? rawLton / 100 : rawLton;
         const re    = this._getREnerg(r) || null;

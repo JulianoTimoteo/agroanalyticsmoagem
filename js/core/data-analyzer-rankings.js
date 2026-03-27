@@ -188,8 +188,32 @@ if (typeof DataAnalyzerRankings === 'undefined') {
                 const allEquipment = this.analyzer._extractEquipments(row);
                 if (!allEquipment.some(eq => String(eq).startsWith('80'))) return;
 
-                const listaOperadores = (row.operadores && row.operadores.length > 0) ? row.operadores : (row.operador ? [row.operador] : []);
-                const validOperadores = listaOperadores.filter(op => String(op).trim().length > 0 && !String(op).toUpperCase().includes('TOTAL'));
+                // Prioridade 1: operadores específicos de colhedora (Cod.Oper.Carreg./Colhed.)
+                let listaOperadores = (row.operadores && row.operadores.length > 0)
+                    ? row.operadores
+                    : (row.operador ? [row.operador] : []);
+
+                // Prioridade 2: se vazio, usa codMotorista como fallback quando equipamento é colhedora própria
+                // Na planilha, alguns registros têm apenas 'Cod.Motorista' sem 'Cod.Oper.Carreg./Colhed.'
+                if (listaOperadores.length === 0 && row.codMotorista) {
+                    listaOperadores = [String(row.codMotorista).trim()];
+                }
+
+                const validOperadores = listaOperadores.filter(op => {
+                    const s = String(op).trim();
+                    if (!s || s.length === 0) return false;
+                    if (s.toUpperCase().includes('TOTAL')) return false;
+                    // Exclui frotas de equipamentos (91xxx, 80xxx, 31xxx) — não são operadores
+                    const numOnly = s.replace(/[^0-9]/g,'');
+                    if (numOnly.length >= 5) {
+                        const prefix2 = parseInt(numOnly.slice(0,2));
+                        // 91xxx = caminhão terceiro, 80-85 = colhedora (equipamento, não operador)
+                        // Códigos de operador são geralmente 5-7 dígitos não começando com 9x ou 8x
+                        if (prefix2 >= 80 && prefix2 <= 99) return false;
+                        if (prefix2 >= 31 && prefix2 <= 32) return false;
+                    }
+                    return true;
+                });
                 if (validOperadores.length === 0) return;
                 const distributedPeso = peso / validOperadores.length;
 
@@ -242,13 +266,21 @@ if (typeof DataAnalyzerRankings === 'undefined') {
                 if (row.transbordos && Array.isArray(row.transbordos)) transbordos = row.transbordos;
                 else if (row.transbordo) transbordos = [row.transbordo];
                 
-                transbordos = [...new Set(transbordos.filter(t => t && !String(t).toUpperCase().includes('TOTAL')))];
+                transbordos = [...new Set(transbordos.filter(t => {
+                    if (!t) return false;
+                    const s = String(t).trim().toUpperCase();
+                    if (s.includes('TOTAL')) return false;
+                    // Aceita apenas frotas de transbordo (prefixos 92-99)
+                    const num = s.replace(/[^0-9]/g,'');
+                    return num.length >= 4 && parseInt(num.slice(0,2)) >= 92;
+                }))];
                 if (transbordos.length === 0) return;
                 
                 const distPeso = peso / transbordos.length;
                 transbordos.forEach(tr => {
                     const trStr = String(tr).trim();
-                    if(trStr.startsWith('92')) {
+                    const firstTwo = parseInt(trStr.replace(/[^0-9]/g,'').slice(0,2));
+                    if(firstTwo >= 92) {
                         const trCode = trStr.replace(/[^0-9]/g, '');
                         if (!transbordoMap.has(trCode)) {
                             transbordoMap.set(trCode, { 
@@ -271,7 +303,34 @@ if (typeof DataAnalyzerRankings === 'undefined') {
                 }));
         }
 
-        analyzeCamEscravo(data) { return []; }
+        analyzeCamEscravo(data) {
+            // Frotas Apoio/Bate-Pino: buscam cana do pátio e aparecem em row.camEscravo
+            // (coluna "Cam. Escravo" na planilha de produção).
+            // Calcula peso total por frota de apoio (31815, 31915, 311015).
+            const APOIO_FROTAS = ['31815', '31915', '311015'];
+            const apoioMap = new Map();
+
+            data.forEach(row => {
+                const peso = parseFloat(row.peso) || 0;
+                if (peso === 0) return;
+
+                // A coluna Cam. Escravo pode estar em row.camEscravo ou outros campos
+                const escravo = row.camEscravo || row['Cam. Escravo'] || row['cam_escravo'] || '';
+                if (!escravo) return;
+
+                const escravoStr = String(escravo).trim().replace(/[^0-9]/g, '');
+                if (!APOIO_FROTAS.includes(escravoStr)) return;
+
+                if (!apoioMap.has(escravoStr)) {
+                    apoioMap.set(escravoStr, { codigo: escravoStr, peso: 0 });
+                }
+                apoioMap.get(escravoStr).peso += peso;
+            });
+
+            return Array.from(apoioMap.values())
+                .sort((a, b) => b.peso - a.peso)
+                .map(item => ({ codigo: item.codigo, peso: item.peso }));
+        }
         analyzeMetas(metaData, frentesAnalysis) { return metaData; }
     }
     window.DataAnalyzerRankings = DataAnalyzerRankings;

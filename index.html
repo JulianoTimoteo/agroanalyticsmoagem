@@ -774,7 +774,7 @@
                 <section class="analytics-container"> 
                     <div class="tabs-content">
                         
-                        <div id="tab-gerenciar" class="tab-pane active">
+                        <div id="tab-gerenciar" class="tab-pane">
 
                           <!-- ══ GERENCIAR: FUTURISTIC CONTROL CENTER ══ -->
                           <style>
@@ -1037,7 +1037,7 @@
                                     </div>
                                   </div>
                                   <div class="gc-btn-row" style="margin-top:14px;">
-                                    <button class="gc-btn ghost" onclick="window.agriculturalDashboard && window.agriculturalDashboard.logout && window.agriculturalDashboard.logout()">
+                                    <button class="gc-btn ghost" onclick="window.agriculturalDashboard && window.agriculturalDashboard.handleLogout()">
                                       <i class="fas fa-sign-out-alt"></i> Sair
                                     </button>
                                   </div>
@@ -1926,13 +1926,8 @@
                  });
             }
 
-            if (logoutBtn) {
-                logoutBtn.addEventListener('click', () => {
-                    auth.signOut().catch((error) => {
-                        console.error('Erro ao fazer logout:', error);
-                    });
-                });
-            }
+            // Logout é gerenciado por app.js (handleLogout) com confirmação
+            // NÃO adicionar segundo listener aqui — causaria logout sem confirmar
 
             window.filterFrontChart = function(type) {
                 if (!window.agriculturalDashboard || !window.agriculturalDashboard.data) return;

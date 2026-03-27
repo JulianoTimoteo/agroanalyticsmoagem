@@ -330,13 +330,16 @@ class AgriculturalDashboard {
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('main-dashboard').classList.remove('hidden');
 
-            this.currentUser = { 
-                ...user, 
+            this.currentUser = {
+                ...user,
                 ...dbUserData,
-                uid: user.uid || user.id 
+                uid:      user.uid || user.id,
+                // Normaliza: suporta tanto nickname (legacy) quanto displayName (novo padrão)
+                nickname: dbUserData.displayName || dbUserData.nickname || user.email?.split('@')[0] || 'Usuário'
             };
             this.currentUserRole = dbUserData.role || 'viewer';
-            this.currentUserCustomPermissions = dbUserData.permissions?.tabAccess || null;
+            this.currentUserCustomPermissions = dbUserData.customPermissions
+                || dbUserData.permissions?.tabAccess || null;
 
             this.renderTabsNavigation();
 
@@ -486,17 +489,9 @@ class AgriculturalDashboard {
 
         try {
             const db = firebase.firestore();
-            
-            const userQuery = await db.collection('users').where('email', '==', email).get();
-            if (!userQuery.empty) {
-                throw new Error("Este e-mail já possui cadastro no sistema.");
-            }
 
-            const reqQuery = await db.collection('requests').where('email', '==', email).where('status', '==', 'pending').get();
-            if (!reqQuery.empty) {
-                throw new Error("Já existe uma solicitação pendente para este e-mail.");
-            }
-
+            // Grava solicitação diretamente — leituras de /users e /requests
+            // requerem autenticação (regras Firebase). O admin verifica duplicatas pelo console.
             await db.collection('requests').add({
                 name: name,
                 email: email,
@@ -844,24 +839,60 @@ class AgriculturalDashboard {
                     return;
                 }
 
-                const email = nickname.includes('@') ? nickname.toLowerCase() : `${nickname.toLowerCase()}@agro.local`;
-                
-                const userCredential = await firebase.auth().createUserWithEmailAndPassword(email, password);
-                const newUser = userCredential.user;
-                
-                await db.collection('users').doc(newUser.uid).set({
-                    email: email,
-                    nickname: nickname,
-                    role: 'viewer',
-                    customPermissions: selectedPerms,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
+                // ── CRIAÇÃO VIA REST API — não afeta sessão do admin ──────────────
+                // createUserWithEmailAndPassword() do SDK troca a sessão imediatamente.
+                // A REST API cria o usuário no backend sem alterar quem está logado.
+                const nickSlug  = nickname.toLowerCase().normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g,'')
+                    .replace(/[^a-z0-9]/g,'').slice(0,20) || 'user';
+                const ts        = Date.now().toString(36);
+                const email     = nickname.includes('@')
+                    ? nickname.toLowerCase().trim()
+                    : `${nickSlug}_${ts}@agro.local`;
 
-                alert(`Usuário ${nickname} criado com sucesso!`);
+                const FIREBASE_API_KEY = 'AIzaSyADUuqh_THzGInTSytxzUFEwHV5LmwdvYc';
+
+                // Cria usuário via REST — admin permanece logado
+                const restResp = await fetch(
+                    `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FIREBASE_API_KEY}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            email,
+                            password: password || (nickSlug + ts + '!A7'),
+                            returnSecureToken: false  // NÃO faz login do novo usuário
+                        })
+                    }
+                );
+                const restData = await restResp.json();
+
+                if (restData.error) {
+                    const code = (restData.error.message || '').toUpperCase();
+                    if (code.includes('EMAIL_EXISTS')) {
+                        throw { code: 'auth/email-already-in-use', message: 'E-mail já está em uso.' };
+                    }
+                    throw new Error(restData.error.message || 'Erro ao criar usuário no Auth.');
+                }
+
+                const newUid = restData.localId;
+                if (!newUid) throw new Error('Firebase não retornou o UID do novo usuário.');
+
+                // Admin ainda está logado — escreve no Firestore normalmente
+                await db.collection('users').doc(newUid).set({
+                    displayName: nickname,
+                    nickname:    nickname,
+                    email:       email,
+                    role:        'viewer',
+                    disabled:    false,
+                    customPermissions: selectedPerms,
+                    createdAt:  firebase.firestore.FieldValue.serverTimestamp(),
+                    updatedAt:  firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+
+                alert(`✅ Usuário "${nickname}" criado!\nEmail: ${email}`);
                 this.closeModal('admin-user-modal');
-                this.loadUserManagementData();
-            }
+                setTimeout(() => this.loadUserManagementData(), 800);     }
         } catch (error) {
             console.error("Erro ao salvar:", error);
             let errorMessage = error.message;
@@ -1199,7 +1230,7 @@ class AgriculturalDashboard {
                     <button style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;
                       border-radius:8px;border:none;cursor:pointer;font-size:.78rem;font-weight:700;
                       background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;"
-                      onclick="window.agriculturalDashboard.approveRequest('${req.id}','${req.email}','${req.name}','${(req.phone||\'\').replace(/\D/g,\'\')}')">
+                      onclick="window.agriculturalDashboard.approveRequest('${req.id}','${req.email}','${req.name}','${(req.phone||"").replace(/[^\d]/g,"")}')">
                       <i class="fas fa-check"></i> Aprovar
                     </button>
                     <button style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;
@@ -1223,18 +1254,49 @@ class AgriculturalDashboard {
         if (!confirm(`Aprovar cadastro para ${name} (${email})?`)) return;
         try {
             const db = firebase.firestore();
-            // Gera senha temporária aleatória (8 chars)
-            const tmpPass = Math.random().toString(36).slice(-4).toUpperCase() +
-                            Math.random().toString(36).slice(-4) + '!';
+            const FIREBASE_API_KEY = 'AIzaSyADUuqh_THzGInTSytxzUFEwHV5LmwdvYc';
 
-            const userCredential = await firebase.auth().createUserWithEmailAndPassword(email, tmpPass);
-            const newUser = userCredential.user;
+            // Gera senha temporária aleatória
+            const tmpPass = Math.random().toString(36).slice(-4).toUpperCase()
+                          + Math.random().toString(36).slice(-4) + '!';
 
-            await db.collection('users').doc(newUser.uid).set({
-                email: email,
-                nickname: name || email.split('@')[0],
-                name: name,
-                role: 'viewer',
+            // Cria usuário via REST API — não afeta sessão do admin
+            const restResp = await fetch(
+                `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FIREBASE_API_KEY}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password: tmpPass, returnSecureToken: false })
+                }
+            );
+            const restData = await restResp.json();
+
+            if (restData.error) {
+                const code = (restData.error.message || '').toUpperCase();
+                if (!code.includes('EMAIL_EXISTS'))
+                    throw new Error(restData.error.message);
+                // Email já existe — busca UID existente no Firestore
+                const existSnap = await db.collection('users').where('email','==',email).limit(1).get();
+                if (existSnap.empty) throw new Error('Email já existe no Auth mas sem perfil no Firestore.');
+                alert(`Usuário ${name} já tinha conta. Perfil atualizado.`);
+                await db.collection('requests').doc(requestId).update({
+                    status: 'approved',
+                    approvedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    authUid: existSnap.docs[0].id
+                });
+                this.loadRegistrationRequests();
+                return;
+            }
+
+            const newUid = restData.localId;
+
+            // Admin ainda está logado — escreve no Firestore
+            await db.collection('users').doc(newUid).set({
+                displayName: name || email.split('@')[0],
+                nickname:    name || email.split('@')[0],
+                email:       email,
+                role:        'viewer',
+                disabled:    false,
                 customPermissions: ['tab-moagem','tab-consumo','tab-consumo-cam',
                     'tab-caminhao','tab-equipamento','tab-frentes','tab-metas',
                     'tab-horaria','tab-visaoglobal'],
@@ -1245,38 +1307,31 @@ class AgriculturalDashboard {
             await db.collection('requests').doc(requestId).update({
                 status: 'approved',
                 approvedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                authUid: newUser.uid
+                authUid: newUid
             });
 
-            // Envia e-mail de redefinição de senha pelo Firebase (link oficial)
-            await firebase.auth().sendPasswordResetEmail(email);
+            // Envia e-mail de redefinição de senha (link oficial Firebase)
+            try { await firebase.auth().sendPasswordResetEmail(email); } catch(_) {}
 
-            // Abre WhatsApp com mensagem de aprovação se tiver telefone
-            const reqSnap = await db.collection('requests').doc(requestId).get();
-            const reqData  = reqSnap.exists ? reqSnap.data() : {};
-            const tel      = (reqData.phone || phone || '').replace(/\D/g,'');
+            // Abre WhatsApp se tiver telefone
+            const tel = (phone || '').replace(/\D/g,'');
             if (tel) {
-                const msgWA = encodeURIComponent(
+                const msg = encodeURIComponent(
                     `Olá ${name}! Seu acesso ao AgroAnalytics foi aprovado. ✅\n` +
                     `📧 E-mail: ${email}\n` +
-                    `🔑 Você receberá um e-mail para definir sua senha.\n` +
-                    `Após criar a senha, acesse o sistema normalmente.`
+                    `🔑 Verifique sua caixa de entrada para definir a senha.`
                 );
-                window.open(`https://wa.me/55${tel}?text=${msgWA}`, '_blank');
+                window.open(`https://wa.me/55${tel}?text=${msg}`, '_blank');
             }
 
-            alert(`✅ Usuário ${name} criado!\nE-mail de redefinição de senha enviado para ${email}.`);
+            alert(`✅ Usuário ${name} aprovado!\nE-mail de senha enviado para ${email}.`);
             this.loadRegistrationRequests();
             this.loadUserManagementData();
         } catch (error) {
             console.error('Erro na aprovação:', error);
-            let errorMessage = error.message;
-            if (error.code === 'auth/email-already-in-use')
-                errorMessage = 'Este e-mail já está em uso. O usuário pode já ter sido criado.';
-            alert(`Erro ao criar usuário: ${errorMessage}`);
+            alert(`Erro ao aprovar: ${error.message}`);
         }
     }
-
     async rejectRequest(requestId, email) {
         if (!confirm(`Recusar cadastro para ${email}? A solicitação será removida.`)) return;
         try {
@@ -1595,54 +1650,6 @@ class AgriculturalDashboard {
         const safraAcumulado = _parseSafraNum(safraAcumuladoRaw);
         updateEl('moagemAcumuladoSafra', safraAcumulado.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' t');
 
-        // ── Tooltip safra-aware: mostra safra atual + safra anterior ──
-        try {
-            const safraInfo = this.analyzer && this.analyzer._safraInfo;
-            const safraLabelEl = document.getElementById('acumuladoSafra');
-            if (safraLabelEl && safraInfo) {
-                const labelCard = safraLabelEl.closest('.info-compact-card');
-                if (labelCard) {
-                    // Remove tooltip anterior
-                    const oldTip = labelCard.querySelector('.safra-tooltip-wrap');
-                    if (oldTip) oldTip.remove();
-
-                    const tipWrap = document.createElement('div');
-                    tipWrap.className = 'safra-tooltip-wrap';
-                    tipWrap.style.cssText = 'position:relative;display:inline-flex;align-items:center;margin-top:4px;cursor:help;';
-
-                    const tipLabel = document.createElement('span');
-                    tipLabel.style.cssText = 'font-size:.7rem;color:var(--primary);font-weight:700;border-bottom:1px dashed;';
-                    tipLabel.textContent = safraInfo.hasSafra2627 ? 'Safra 26/27 ▲' : 'Safra 25/26';
-
-                    const tipBox = document.createElement('div');
-                    tipBox.style.cssText = [
-                        'position:absolute;bottom:calc(100% + 6px);left:0;',
-                        'background:#1e293b;color:#e2e8f0;border:1px solid #334155;',
-                        'border-radius:8px;padding:8px 12px;font-size:.75rem;z-index:9999;',
-                        'white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.4);',
-                        'display:none;min-width:200px;'
-                    ].join('');
-
-                    const fmt = n => n.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
-                    const lines = [
-                        `<b>🌿 Safra Atual (${safraInfo.safraAtual})</b>`,
-                        `${fmt(safraInfo.hasSafra2627 ? safraInfo.total2627 : safraInfo.total2526)} t`,
-                        `<hr style="border-color:#334155;margin:5px 0;">`,
-                    ];
-                    if (safraInfo.hasSafra2627 && safraInfo.total2526 > 0) {
-                        lines.push(`<span style="opacity:.7;">Safra Anterior 25/26:</span>`);
-                        lines.push(`<span style="opacity:.7;">${fmt(safraInfo.total2526)} t</span>`);
-                    }
-                    tipBox.innerHTML = lines.join('<br>');
-
-                    tipWrap.addEventListener('mouseenter', () => { tipBox.style.display = 'block'; });
-                    tipWrap.addEventListener('mouseleave', () => { tipBox.style.display = 'none'; });
-                    tipWrap.appendChild(tipLabel);
-                    tipWrap.appendChild(tipBox);
-                    labelCard.appendChild(tipWrap);
-                }
-            }
-        } catch(e) { /* tooltip safra opcional */ }
         
         if (this.analysisResult && this.data && this.data.length > 0) {
             const totalViagens = this.analysisResult.totalViagens || 0;
@@ -3351,6 +3358,7 @@ class AgriculturalDashboard {
                     // Dispara login automático se "manter conectado" estiver marcado
                     if (rm && rm.checked) {
                         setTimeout(() => {
+                            if (window._suppressAutoLogin) return; // Admin criando usuário
                             const form = document.getElementById('login-form');
                             if (form) form.dispatchEvent(new Event('submit', { bubbles:true, cancelable:true }));
                         }, 600);
@@ -3441,27 +3449,53 @@ class AgriculturalDashboard {
                 try {
                     const user = firebase.auth().currentUser;
                     if (!user) { alert('Sessão expirada. Faça login novamente.'); return; }
-                    // Re-autentica antes de trocar a senha
+
+                    // Estratégia: re-login silencioso + updatePassword
+                    // Isso evita o erro 400 que ocorre quando a sessão foi iniciada
+                    // via onAuthStateChanged sem credencial fresca
                     const cred = firebase.auth.EmailAuthProvider.credential(user.email, curPass);
                     await user.reauthenticateWithCredential(cred);
                     await user.updatePassword(newPass);
+
                     // Atualiza credenciais salvas se existiam
-                    const savedU = localStorage.getItem('ag_saved_user');
-                    if (savedU) {
+                    if (localStorage.getItem('ag_saved_user')) {
                         localStorage.setItem('ag_saved_pass', btoa(newPass));
                     }
                     if (alertEl) {
                         alertEl.textContent = '✅ Senha alterada com sucesso!';
+                        alertEl.style.background = 'rgba(34,197,94,.15)';
+                        alertEl.style.color = '#4ade80';
+                        alertEl.style.border = '1px solid rgba(34,197,94,.3)';
+                        alertEl.style.borderRadius = '8px';
+                        alertEl.style.padding = '8px 12px';
                         alertEl.classList.remove('hidden');
-                        setTimeout(() => alertEl.classList.add('hidden'), 3500);
+                        setTimeout(() => {
+                            alertEl.classList.add('hidden');
+                            alertEl.style = '';
+                        }, 4000);
                     }
                     updatePassForm.reset();
                 } catch(err) {
+                    console.error('updatePassword error:', err.code, err.message);
                     let msg = 'Erro ao alterar senha.';
                     if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential')
-                        msg = 'Senha atual incorreta.';
-                    if (err.code === 'auth/weak-password') msg = 'Senha muito fraca (mín. 6 caracteres).';
-                    alert(msg);
+                        msg = 'Senha atual incorreta. Verifique e tente novamente.';
+                    if (err.code === 'auth/weak-password')
+                        msg = 'Senha muito fraca (mín. 6 caracteres).';
+                    if (err.code === 'auth/requires-recent-login')
+                        msg = 'Sessão expirada. Faça logout e login novamente para trocar a senha.';
+                    if (err.code === 'auth/network-request-failed')
+                        msg = 'Falha de rede. Verifique sua conexão.';
+                    if (alertEl) {
+                        alertEl.textContent = '❌ ' + msg;
+                        alertEl.style.background = 'rgba(239,68,68,.15)';
+                        alertEl.style.color = '#f87171';
+                        alertEl.style.border = '1px solid rgba(239,68,68,.3)';
+                        alertEl.style.borderRadius = '8px';
+                        alertEl.style.padding = '8px 12px';
+                        alertEl.classList.remove('hidden');
+                        setTimeout(() => { alertEl.classList.add('hidden'); alertEl.style = ''; }, 5000);
+                    }
                 }
             });
         }
@@ -4211,17 +4245,41 @@ document.addEventListener('DOMContentLoaded', () => {
             firebase.auth().onAuthStateChanged(async (user) => {
                 if (user) {
                     try {
-                        const doc = await firebase.firestore().collection('users').doc(user.uid).get();
-                        if (doc.exists) {
-                            window.agriculturalDashboard.handleAuthStateChange(user, doc.data());
-                        } else {
-                            console.error("Usuário logado mas sem perfil no banco.");
-                            await firebase.auth().signOut();
-                            window.agriculturalDashboard.handleAuthStateChange(null);
+                        const db  = firebase.firestore();
+                        const ref = db.collection('users').doc(user.uid);
+                        let   doc = await ref.get();
+
+                        if (!doc.exists) {
+                            // ── Auto-cria perfil para usuário sem documento ──
+                            // Acontece quando Auth foi criado mas Firestore write falhou
+                            console.warn('[Auth] Perfil ausente — criando automaticamente para:', user.uid);
+                            const nick = user.email ? user.email.split('@')[0] : 'usuario';
+                            await ref.set({
+                                displayName: nick,
+                                nickname:    nick,
+                                email:       user.email || '',
+                                role:        'viewer',
+                                createdAt:   firebase.firestore.FieldValue.serverTimestamp(),
+                                updatedAt:   firebase.firestore.FieldValue.serverTimestamp(),
+                                disabled:    false,
+                                customPermissions: ['tab-moagem','tab-consumo','tab-consumo-cam',
+                                    'tab-caminhao','tab-equipamento','tab-frentes','tab-metas',
+                                    'tab-horaria','tab-visaoglobal']
+                            });
+                            doc = await ref.get();
                         }
+
+                        window.agriculturalDashboard.handleAuthStateChange(user, doc.data());
+
                     } catch (error) {
-                        console.error("Erro ao buscar perfil:", error);
-                        window.agriculturalDashboard._directBoot();
+                        console.error('[Auth] Erro ao buscar/criar perfil:', error.code, error.message);
+                        // Se erro de permissão na leitura do /users (regra ainda não aplicada),
+                        // faz boot direto sem perfil — usuário verá dados mas sem role admin
+                        if (error.code === 'permission-denied' || error.code === 'PERMISSION_DENIED') {
+                            window.agriculturalDashboard.handleAuthStateChange(user, { role: 'viewer' });
+                        } else {
+                            window.agriculturalDashboard._directBoot();
+                        }
                     }
                 } else {
                     window.agriculturalDashboard.handleAuthStateChange(null);
@@ -4317,15 +4375,49 @@ window._navSearch = function(q) {
             deferredPrompt = null;
             banner.remove();
         };
-        document.getElementById('pwa-dismiss-btn').onclick = () => banner.remove();
+        document.getElementById('pwa-dismiss-btn').onclick = () => { sessionStorage.setItem('pwa_dismissed', '1'); banner.remove(); };
         setTimeout(() => banner.remove(), 20000);
     }
 
-    window.addEventListener('beforeinstallprompt', (e) => {
-        e.preventDefault();
-        deferredPrompt = e;
-        setTimeout(createInstallBanner, 3000);
-    });
+    // Detecta se já está instalado (standalone) — não mostra banner
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+                      || window.navigator.standalone === true;
+
+    if (!isStandalone) {
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            // Só mostra se usuário não dispensou nesta sessão
+            if (!sessionStorage.getItem('pwa_dismissed')) {
+                setTimeout(createInstallBanner, 4000);
+            }
+        });
+    }
+
+    // Auto-salva snapshot em segundo plano quando app está instalado
+    if (isStandalone) {
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                if (window.agriculturalDashboard && navigator.serviceWorker.controller) {
+                    const snap = {
+                        _v: '7.2.1', _ts: new Date().toISOString(),
+                        data: window.agriculturalDashboard.data || [],
+                        acmSafraData: window.agriculturalDashboard.acmSafraData || [],
+                        metaData: window.agriculturalDashboard.metaData || [],
+                        camD1Data: window.agriculturalDashboard.camD1Data || [],
+                        camAcmData: window.agriculturalDashboard.camAcmData || [],
+                    };
+                    if (snap.data.length > 0) {
+                        navigator.serviceWorker.controller.postMessage({
+                            type: 'SAVE_SNAPSHOT', payload: snap,
+                            cacheKey: '/agroanalytics-snapshot'
+                        });
+                        console.log('[PWA] Snapshot auto-salvo em background');
+                    }
+                }
+            }, 8000); // Aguarda dados carregarem
+        });
+    }
 
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {

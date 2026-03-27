@@ -15,8 +15,10 @@ class IntelligentProcessor {
                 'op2_dsc': ['DSC.OPER.CARREG./COLHED. 2', 'DSC OPER CARREG COLHED 2', 'NOME OPERADOR 2', 'DSC OPER 2', 'NOME OPER 2', 'MOTORISTA 2'],
                 'op3_cod': ['COD OPER CARREG COLHED 3', 'COD.OPER.CARREG./COLHED. 3', 'COD OPERADOR 3', 'COD OPER 3'],
                 'op3_dsc': ['DSC.OPER.CARREG./COLHED. 3', 'DSC OPER CARREG COLHED 3', 'NOME OPERADOR 3', 'DSC OPER 3', 'NOME OPER 3', 'MOTORISTA 3'],
-                'operador_generico': ['OPERADOR', 'COD OPERADOR', 'MOTORISTA', 'COD.MOTORISTA'], 
+                'operador_generico': ['OPERADOR', 'COD OPERADOR'], // Motorista separado para não contaminar ranking de operadores colhedora
+                'cod_motorista': ['MOTORISTA', 'COD.MOTORISTA', 'COD MOTORISTA', 'FROTA MOTRIZ'],
                 'transbordo': ['TRANSBORDO', 'TRAT TRANSBORDO', 'TRAT TRANSBORDO 1', 'TRAT. TRANSBORDO 1'],
+                'cam_escravo': ['CAM. ESCRAVO', 'CAM ESCRAVO', 'CAMINHO ESCRAVO', 'ESCRAVO', 'CAM.ESCRAVO', 'CARREG./ESCRAVO', 'CARREG ESCRAVO'],
                 'transbordo2': ['TRAT TRANSBORDO 2', 'TRAT. TRANSBORDO 2'], 
                 'transbordo3': ['TRAT TRANSBORDO 3', 'TRAT. TRANSBORDO 3'],
                 'peso': ['PESO LIQUIDO', 'PESO FINAL', 'PESO LÍQUIDO', 'LIQUIDO'], 
@@ -319,7 +321,9 @@ class IntelligentProcessor {
                  else if (this.matchesPattern(cleanKey, this.columnMappings.production.op3_dsc)) opData[3].d = value;
                  
                  else if (this.matchesPattern(cleanKey, this.columnMappings.production.operador_generico) && !opData[1].c) opData[1].c = value;
+                 else if (this.matchesPattern(cleanKey, this.columnMappings.production.cod_motorista)) item.codMotorista = String(value).trim();
                  else if (this.matchesPattern(cleanKey, this.columnMappings.production.transbordo)) this._addToList(item.transbordos, value);
+                 else if (this.matchesPattern(cleanKey, this.columnMappings.production.cam_escravo)) item.camEscravo = String(value).trim().replace(/[^0-9]/g,'');
                  else if (this.matchesPattern(cleanKey, this.columnMappings.production.transbordo2)) this._addToList(item.transbordos, value);
                  else if (this.matchesPattern(cleanKey, this.columnMappings.production.transbordo3)) this._addToList(item.transbordos, value);
                  else if (this.matchesPattern(cleanKey, this.columnMappings.production.tipoProprietarioFa)) item.tipoProprietarioFa = String(value).trim();
